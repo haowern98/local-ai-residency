@@ -223,15 +223,17 @@ Additional ONNX LLM compatibility sweep:
 ```text
 Phi-3 Mini CUDA INT4 ONNX: pass
 Qwen3 4B CUDA INT4 ONNX: pass
+Qwen3 1.7B q4/int8/uint8/quantized ONNX: pass
 Llama 3.2 1B q4f16 ONNX: pass
-Qwen3 1.7B q4f16/fp16 ONNX: blocked, decode produced no valid next token
+Qwen3 1.7B q4f16/fp16 ONNX: blocked, all-NaN logits
 Gemma 3 1B q4f16/fp16 ONNX: blocked by ONNX Runtime CUDA GroupQueryAttention
 AMD Qwen3 8B AWQ hybrid ONNX: blocked by custom RyzenAI op
 ```
 
 The Qwen3 4B and Llama 3.2 1B passes prove the ONNX adapter is not Phi-specific.
 The adapter now discovers `float16`/`float32` logits and optional
-`position_ids` from the graph while keeping KV cache tensors strict `float16`.
+`position_ids` from the graph, and supports `float16`/`float32` KV cache
+tensors.
 
 Verified Phase 9F mixed-backend handoff through the same publishable command:
 

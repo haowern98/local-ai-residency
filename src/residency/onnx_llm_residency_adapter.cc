@@ -136,6 +136,36 @@ std::size_t TensorElementBytes(ONNXTensorElementDataType type) {
   }
 }
 
+void CountLogitValue(float value, OnnxLlmResidencyReport* report) {
+  if (std::isnan(value)) {
+    ++report->logits_nan_count;
+    return;
+  }
+  if (std::isinf(value)) {
+    if (value > 0.0f) {
+      ++report->logits_pos_inf_count;
+    } else {
+      ++report->logits_neg_inf_count;
+    }
+    return;
+  }
+  ++report->logits_finite_count;
+}
+
+std::string DecodeFailureMessage(const OnnxLlmResidencyReport& report) {
+  std::ostringstream message;
+  message << "ONNX LLM decode produced no valid next token"
+          << "; logits_dtype=" << report.logits_dtype
+          << "; vocab_size=" << report.logits_vocab_size
+          << "; finite=" << report.logits_finite_count
+          << "; nan=" << report.logits_nan_count
+          << "; pos_inf=" << report.logits_pos_inf_count
+          << "; neg_inf=" << report.logits_neg_inf_count
+          << "; position_ids_present="
+          << (report.position_ids_present ? "yes" : "no");
+  return message.str();
+}
+
 }  // namespace
 
 OnnxLlmResidencyAdapter::CudaBuffer::~CudaBuffer() { Free(); }
@@ -267,7 +297,8 @@ void OnnxLlmResidencyAdapter::RestoreState() {
     shape[0] = 1;
     shape[2] = cache_length_;
     tensor.cache_shape = shape;
-    tensor.cache_buffer.Allocate(ElementCount(shape) * kFloat16Bytes);
+    tensor.cache_buffer.Allocate(ElementCount(shape) *
+                                 TensorElementBytes(tensor.element_type));
     MOSAICVRAM_CUDA_CHECK(
         cudaMemcpy(tensor.cache_buffer.data, src, tensor.cache_buffer.bytes,
                    cudaMemcpyHostToDevice),
@@ -320,12 +351,22 @@ void OnnxLlmResidencyAdapter::DiscoverModelIo() {
   report_.present_output_count = 0;
   report_.logits_output_count = 0;
   report_.logits_dtype.clear();
+  report_.logits_vocab_size = 0;
+  report_.logits_finite_count = 0;
+  report_.logits_nan_count = 0;
+  report_.logits_pos_inf_count = 0;
+  report_.logits_neg_inf_count = 0;
   report_.position_ids_present = false;
+  report_.decode_valid = false;
   report_.cache_surface_found = false;
 
   struct Pair {
     std::string past_name;
     std::string present_name;
+    ONNXTensorElementDataType past_element_type =
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+    ONNXTensorElementDataType present_element_type =
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
     std::vector<int64_t> shape;
   };
 
@@ -359,15 +400,18 @@ void OnnxLlmResidencyAdapter::DiscoverModelIo() {
     int layer = 0;
     bool is_key = false;
     if (ParseKvName(input_name, "past_key_values.", &layer, &is_key)) {
-      if (tensor_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+      const ONNXTensorElementDataType element_type =
+          tensor_info.GetElementType();
+      if (element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 &&
+          element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
         std::ostringstream message;
         message << "ONNX LLM KV input " << input_name << " has unsupported "
-                << TensorElementTypeName(tensor_info.GetElementType())
-                << " dtype";
+                << TensorElementTypeName(element_type) << " dtype";
         throw std::runtime_error(message.str());
       }
       Pair& pair = kv_pairs[std::make_tuple(layer, is_key)];
       pair.past_name = input_name;
+      pair.past_element_type = element_type;
       pair.shape = tensor_info.GetShape();
       ++report_.past_input_count;
       continue;
@@ -392,6 +436,7 @@ void OnnxLlmResidencyAdapter::DiscoverModelIo() {
         throw std::runtime_error("ONNX LLM logits shape is unsupported");
       }
       vocab_size_ = shape[2];
+      report_.logits_vocab_size = static_cast<std::size_t>(vocab_size_);
       logits_element_type_ = tensor_info.GetElementType();
       if (logits_element_type_ != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 &&
           logits_element_type_ != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
@@ -408,15 +453,18 @@ void OnnxLlmResidencyAdapter::DiscoverModelIo() {
     int layer = 0;
     bool is_key = false;
     if (ParseKvName(output_name, "present.", &layer, &is_key)) {
-      if (tensor_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+      const ONNXTensorElementDataType element_type =
+          tensor_info.GetElementType();
+      if (element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 &&
+          element_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
         std::ostringstream message;
         message << "ONNX LLM KV output " << output_name << " has unsupported "
-                << TensorElementTypeName(tensor_info.GetElementType())
-                << " dtype";
+                << TensorElementTypeName(element_type) << " dtype";
         throw std::runtime_error(message.str());
       }
       Pair& pair = kv_pairs[std::make_tuple(layer, is_key)];
       pair.present_name = output_name;
+      pair.present_element_type = element_type;
       ++report_.present_output_count;
     }
   }
@@ -426,12 +474,16 @@ void OnnxLlmResidencyAdapter::DiscoverModelIo() {
     if (pair.past_name.empty() || pair.present_name.empty()) {
       throw std::runtime_error("ONNX LLM KV past/present pair is incomplete");
     }
+    if (pair.past_element_type != pair.present_element_type) {
+      throw std::runtime_error("ONNX LLM KV past/present dtypes differ");
+    }
     if (pair.shape.size() != 4 || pair.shape[1] <= 0 || pair.shape[3] <= 0) {
       throw std::runtime_error("ONNX LLM KV shape is unsupported");
     }
     KvTensor tensor;
     tensor.past_name = pair.past_name;
     tensor.present_name = pair.present_name;
+    tensor.element_type = pair.past_element_type;
     tensor.base_shape = pair.shape;
     kv_tensors_.push_back(std::move(tensor));
   }
@@ -451,7 +503,8 @@ void OnnxLlmResidencyAdapter::AllocateInitialCache() {
     shape[0] = 1;
     shape[2] = cache_length_;
     tensor.cache_shape = shape;
-    tensor.cache_buffer.Allocate(ElementCount(shape) * kFloat16Bytes);
+    tensor.cache_buffer.Allocate(ElementCount(shape) *
+                                 TensorElementBytes(tensor.element_type));
   }
 }
 
@@ -463,6 +516,8 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
 
   const int64_t input_length = static_cast<int64_t>(input_tokens.size());
   const int64_t total_length = past_length + input_length;
+  Ort::MemoryInfo cpu_memory_info =
+      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   Ort::MemoryInfo cuda_memory_info("Cuda", OrtDeviceAllocator,
                                    options_.device_index, OrtMemTypeDefault);
   Ort::IoBinding binding(*session_);
@@ -471,29 +526,17 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
   input_values.reserve(3 + kv_tensors_.size());
   output_values.reserve(1 + kv_tensors_.size());
 
-  CudaBuffer input_ids;
-  CudaBuffer attention_mask;
-  CudaBuffer position_ids;
   const std::vector<int64_t> input_shape = {1, input_length};
   const std::vector<int64_t> mask_shape = {1, total_length};
   std::vector<int64_t> mask(static_cast<std::size_t>(total_length), 1);
-  input_ids.Allocate(input_tokens.size() * sizeof(int64_t));
-  attention_mask.Allocate(mask.size() * sizeof(int64_t));
-  MOSAICVRAM_CUDA_CHECK(cudaMemcpy(input_ids.data, input_tokens.data(),
-                                   input_ids.bytes, cudaMemcpyHostToDevice),
-                        "copy ONNX LLM input ids");
-  MOSAICVRAM_CUDA_CHECK(
-      cudaMemcpy(attention_mask.data, mask.data(), attention_mask.bytes,
-                 cudaMemcpyHostToDevice),
-      "copy ONNX LLM attention mask");
 
   input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-      cuda_memory_info, static_cast<int64_t*>(input_ids.data),
+      cpu_memory_info, const_cast<int64_t*>(input_tokens.data()),
       input_tokens.size(), input_shape.data(), input_shape.size()));
   binding.BindInput(input_ids_name_.c_str(), input_values.back());
 
   input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-      cuda_memory_info, static_cast<int64_t*>(attention_mask.data), mask.size(),
+      cpu_memory_info, mask.data(), mask.size(),
       mask_shape.data(), mask_shape.size()));
   binding.BindInput(attention_mask_name_.c_str(), input_values.back());
 
@@ -502,14 +545,9 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
     for (int64_t i = 0; i < input_length; ++i) {
       positions[static_cast<std::size_t>(i)] = past_length + i;
     }
-    position_ids.Allocate(positions.size() * sizeof(int64_t));
-    MOSAICVRAM_CUDA_CHECK(
-        cudaMemcpy(position_ids.data, positions.data(), position_ids.bytes,
-                   cudaMemcpyHostToDevice),
-        "copy ONNX LLM position ids");
     input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-        cuda_memory_info, static_cast<int64_t*>(position_ids.data),
-        positions.size(), input_shape.data(), input_shape.size()));
+        cpu_memory_info, positions.data(), positions.size(),
+        input_shape.data(), input_shape.size()));
     binding.BindInput(position_ids_name_.c_str(), input_values.back());
   }
 
@@ -517,7 +555,7 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
     input_values.push_back(Ort::Value::CreateTensor(
         cuda_memory_info, tensor.cache_buffer.data, tensor.cache_buffer.bytes,
         tensor.cache_shape.data(), tensor.cache_shape.size(),
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16));
+        tensor.element_type));
     binding.BindInput(tensor.past_name.c_str(), input_values.back());
   }
 
@@ -536,16 +574,17 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
     KvTensor present;
     present.past_name = tensor.past_name;
     present.present_name = tensor.present_name;
+    present.element_type = tensor.element_type;
     present.base_shape = tensor.base_shape;
     present.cache_shape = tensor.base_shape;
     present.cache_shape[0] = 1;
     present.cache_shape[2] = total_length;
     present.cache_buffer.Allocate(ElementCount(present.cache_shape) *
-                                  kFloat16Bytes);
+                                  TensorElementBytes(present.element_type));
     output_values.push_back(Ort::Value::CreateTensor(
         cuda_memory_info, present.cache_buffer.data, present.cache_buffer.bytes,
         present.cache_shape.data(), present.cache_shape.size(),
-        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16));
+        present.element_type));
     binding.BindOutput(present.present_name.c_str(), output_values.back());
     present_tensors.push_back(std::move(present));
   }
@@ -559,6 +598,11 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
   float best_logit = -std::numeric_limits<float>::infinity();
   int64_t best_token = -1;
   double checksum = 0.0;
+  report_.logits_finite_count = 0;
+  report_.logits_nan_count = 0;
+  report_.logits_pos_inf_count = 0;
+  report_.logits_neg_inf_count = 0;
+  report_.decode_valid = false;
 
   if (logits_element_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
     std::vector<std::uint16_t> host_logits(logits_values);
@@ -569,6 +613,10 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
     for (int64_t i = 0; i < vocab_size_; ++i) {
       const float value = HalfToFloat(
           host_logits[last_token_offset + static_cast<std::size_t>(i)]);
+      CountLogitValue(value, &report_);
+      if (!std::isfinite(value)) {
+        continue;
+      }
       checksum += static_cast<double>(value);
       if (value > best_logit) {
         best_logit = value;
@@ -584,6 +632,10 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
     for (int64_t i = 0; i < vocab_size_; ++i) {
       const float value =
           host_logits[last_token_offset + static_cast<std::size_t>(i)];
+      CountLogitValue(value, &report_);
+      if (!std::isfinite(value)) {
+        continue;
+      }
       checksum += static_cast<double>(value);
       if (value > best_logit) {
         best_logit = value;
@@ -595,8 +647,9 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
   }
 
   if (best_token < 0) {
-    throw std::runtime_error("ONNX LLM decode produced no valid next token");
+    throw std::runtime_error(DecodeFailureMessage(report_));
   }
+  report_.decode_valid = true;
 
   ReplaceCache(&present_tensors, total_length);
   return DecodeResult{best_token, checksum};

@@ -62,7 +62,7 @@ logits output
 Currently supported:
 
 ```text
-KV cache dtype: float16
+KV cache dtype: float16 or float32
 logits dtype: float16 or float32
 batch size: 1
 CUDA execution provider
@@ -74,7 +74,7 @@ Currently unsupported:
 ```text
 hidden KV cache inside custom operators
 required inputs other than input_ids, attention_mask, position_ids, and KV cache
-KV cache dtypes other than float16
+KV cache dtypes other than float16 or float32
 split decoder / decoder-with-past workflows
 provider-specific custom ops not available in ONNX Runtime CUDA
 models that require browser, WebGPU, RyzenAI, DirectML, or other custom runtimes
@@ -86,8 +86,9 @@ Validated locally:
 | --- | --- | --- | --- |
 | Phi-3 Mini 4K Instruct ONNX | CUDA INT4 | Pass | `float16` logits, explicit KV cache. |
 | Qwen3 4B ONNX | CUDA INT4 | Pass | `float16` logits, explicit KV cache. |
+| Qwen3 1.7B ONNX | q4/int8/uint8/quantized | Pass | `float32` logits and `float32` KV cache. |
 | Llama 3.2 1B Instruct ONNX | q4f16 | Pass | `float32` logits, explicit KV cache. |
-| Qwen3 1.7B ONNX | q4f16/fp16 | Blocked | Decode produced no valid next token after `position_ids` support. |
+| Qwen3 1.7B ONNX | q4f16/fp16 | Blocked | Decode produced all-NaN logits with these exports. |
 | Gemma 3 1B ONNX | q4f16/fp16 | Blocked | ONNX Runtime CUDA rejected `GroupQueryAttention` with `attention_bias`. |
 | AMD Qwen3 8B AWQ ONNX hybrid | RyzenAI hybrid | Blocked | Requires custom `com.ryzenai:MatMulNBits` op. |
 

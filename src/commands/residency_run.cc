@@ -428,6 +428,20 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
               << "session" << session_id
               << "_logits_dtype=" << report.logits_dtype << "\n"
+              << "session" << session_id
+              << "_logits_vocab_size=" << report.logits_vocab_size << "\n"
+              << "session" << session_id
+              << "_logits_finite_count=" << report.logits_finite_count << "\n"
+              << "session" << session_id
+              << "_logits_nan_count=" << report.logits_nan_count << "\n"
+              << "session" << session_id
+              << "_logits_pos_inf_count=" << report.logits_pos_inf_count
+              << "\n"
+              << "session" << session_id
+              << "_logits_neg_inf_count=" << report.logits_neg_inf_count
+              << "\n"
+              << "session" << session_id
+              << "_decode_valid=" << BoolText(report.decode_valid) << "\n"
               << "session" << session_id << "_position_ids_present="
               << BoolText(report.position_ids_present) << "\n"
               << "session" << session_id

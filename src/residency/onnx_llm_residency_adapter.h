@@ -27,6 +27,11 @@ struct OnnxLlmResidencyReport {
   int present_output_count = 0;
   int logits_output_count = 0;
   std::string logits_dtype;
+  std::size_t logits_vocab_size = 0;
+  std::size_t logits_finite_count = 0;
+  std::size_t logits_nan_count = 0;
+  std::size_t logits_pos_inf_count = 0;
+  std::size_t logits_neg_inf_count = 0;
   std::size_t prompt_tokens = 0;
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
@@ -38,6 +43,7 @@ struct OnnxLlmResidencyReport {
   double initial_session_load_ms = 0.0;
   double session_reload_ms = 0.0;
   bool position_ids_present = false;
+  bool decode_valid = false;
   bool cache_surface_found = false;
   bool resume_match = false;
 };
@@ -85,6 +91,8 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   struct KvTensor {
     std::string past_name;
     std::string present_name;
+    ONNXTensorElementDataType element_type =
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
     std::vector<int64_t> base_shape;
     std::vector<int64_t> cache_shape;
     CudaBuffer cache_buffer;
