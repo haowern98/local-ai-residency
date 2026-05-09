@@ -16,6 +16,41 @@
 #include "util/timer.h"
 
 namespace mosaicvram {
+namespace {
+
+class ScopedLlamaBatch {
+ public:
+  explicit ScopedLlamaBatch(int32_t token_capacity)
+      : batch_(llama_batch_init(token_capacity, /*embd=*/0,
+                                /*n_seq_max=*/1)) {}
+
+  ~ScopedLlamaBatch() { llama_batch_free(batch_); }
+
+  ScopedLlamaBatch(const ScopedLlamaBatch&) = delete;
+  ScopedLlamaBatch& operator=(const ScopedLlamaBatch&) = delete;
+
+  llama_batch* get() { return &batch_; }
+
+ private:
+  llama_batch batch_;
+};
+
+void ClearBatch(llama_batch* batch) {
+  batch->n_tokens = 0;
+}
+
+void AddTokenToBatch(llama_batch* batch, llama_token token, llama_pos position,
+                     llama_seq_id sequence_id, bool logits) {
+  const int32_t index = batch->n_tokens;
+  batch->token[index] = token;
+  batch->pos[index] = position;
+  batch->n_seq_id[index] = 1;
+  batch->seq_id[index][0] = sequence_id;
+  batch->logits[index] = logits;
+  batch->n_tokens++;
+}
+
+}  // namespace
 
 LlamaResidencyAdapter::BackendLifetime::BackendLifetime() {
   llama_backend_init();
@@ -71,6 +106,7 @@ void LlamaResidencyAdapter::CreateContext() {
     throw std::runtime_error("cannot create llama context without model");
   }
   context_ = MakeContext();
+  ResetDecodePosition();
   residency_state_ = ResidencyState::kResident;
 }
 
@@ -86,7 +122,7 @@ void LlamaResidencyAdapter::PrefillPrompt() {
     throw std::runtime_error("prompt is too large for requested context");
   }
   report_.prompt_tokens = prompt_tokens.size();
-  DecodeTokens(&prompt_tokens);
+  DecodeTokens(prompt_tokens);
   report_.first_token = GreedyToken();
   report_.prefill_ms = timer.ElapsedMs();
 }
@@ -118,6 +154,7 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
   }
 
   snapshot_.source_residency = residency_state_;
+  snapshot_decode_position_ = next_decode_position_;
   report_.full_state_bytes = snapshot_.full_state_bytes;
   report_.sequence_state_bytes = snapshot_.sequence_state_bytes;
   report_.save_state_ms = timer.ElapsedMs();
@@ -126,14 +163,14 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
 
 void LlamaResidencyAdapter::CaptureBaselineNextToken() {
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.baseline_next_token = GreedyToken();
 }
 
 void LlamaResidencyAdapter::CheckFullRestore() {
   report_.restored_full_bytes = RestoreFullState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.full_restore_next_token = GreedyToken();
   report_.full_restore_match =
       report_.baseline_next_token == report_.full_restore_next_token;
@@ -142,7 +179,7 @@ void LlamaResidencyAdapter::CheckFullRestore() {
 void LlamaResidencyAdapter::CheckSequenceRestore() {
   report_.restored_sequence_bytes = RestoreSequenceState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.sequence_restore_next_token = GreedyToken();
   report_.sequence_restore_match =
       report_.baseline_next_token == report_.sequence_restore_next_token;
@@ -156,7 +193,7 @@ void LlamaResidencyAdapter::CheckSameContextClearAndRestore() {
       same_context_address == context_.get();
   report_.same_context_restore_bytes = RestoreFullState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.same_context_restore_next_token = GreedyToken();
   report_.same_context_restore_match =
       report_.baseline_next_token == report_.same_context_restore_next_token;
@@ -175,7 +212,7 @@ void LlamaResidencyAdapter::RecreateContext() { CreateContext(); }
 void LlamaResidencyAdapter::CheckRecreatedFullRestore() {
   report_.recreated_full_bytes = RestoreFullState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.recreated_full_next_token = GreedyToken();
   report_.recreated_full_restore_match =
       report_.baseline_next_token == report_.recreated_full_next_token;
@@ -184,7 +221,7 @@ void LlamaResidencyAdapter::CheckRecreatedFullRestore() {
 void LlamaResidencyAdapter::CheckRecreatedSequenceRestore() {
   report_.recreated_sequence_bytes = RestoreSequenceState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.recreated_sequence_next_token = GreedyToken();
   report_.recreated_sequence_restore_match =
       report_.baseline_next_token == report_.recreated_sequence_next_token;
@@ -219,7 +256,7 @@ void LlamaResidencyAdapter::RestoreState() {
 void LlamaResidencyAdapter::CheckModelReloadedFullRestore() {
   report_.model_reloaded_full_bytes = RestoreFullState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.model_reloaded_full_next_token = GreedyToken();
   report_.model_reloaded_full_restore_match =
       report_.baseline_next_token == report_.model_reloaded_full_next_token;
@@ -228,7 +265,7 @@ void LlamaResidencyAdapter::CheckModelReloadedFullRestore() {
 void LlamaResidencyAdapter::CheckModelReloadedSequenceRestore() {
   report_.model_reloaded_sequence_bytes = RestoreSequenceState();
   std::vector<llama_token> continuation = {report_.first_token};
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
   report_.model_reloaded_sequence_next_token = GreedyToken();
   report_.model_reloaded_sequence_restore_match =
       report_.baseline_next_token == report_.model_reloaded_sequence_next_token;
@@ -247,7 +284,7 @@ void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
 
   std::vector<llama_token> continuation = TokenizeText(text,
                                                        /*add_special=*/false);
-  DecodeTokens(&continuation);
+  DecodeTokens(continuation);
 
   std::vector<llama_token> generated_tokens;
   generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
@@ -258,7 +295,7 @@ void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
     }
     generated_tokens.push_back(token);
     std::vector<llama_token> next = {token};
-    DecodeTokens(&next);
+    DecodeTokens(next);
   }
 
   report_.generated_tokens = generated_tokens.size();
@@ -275,7 +312,7 @@ bool LlamaResidencyAdapter::ResumeCheck() {
       report_.baseline_next_token != LLAMA_TOKEN_NULL &&
       report_.first_token != LLAMA_TOKEN_NULL) {
     std::vector<llama_token> continuation = {report_.first_token};
-    DecodeTokens(&continuation);
+    DecodeTokens(continuation);
     report_.model_reloaded_full_next_token = GreedyToken();
     report_.model_reloaded_full_restore_match =
         report_.baseline_next_token == report_.model_reloaded_full_next_token;
@@ -367,12 +404,44 @@ std::vector<llama_token> LlamaResidencyAdapter::TokenizeText(
   return tokens;
 }
 
-void LlamaResidencyAdapter::DecodeTokens(std::vector<llama_token>* tokens) {
-  llama_batch batch =
-      llama_batch_get_one(tokens->data(), static_cast<int32_t>(tokens->size()));
-  const int32_t status = llama_decode(context_.get(), batch);
-  if (status != 0) {
-    throw std::runtime_error("llama_decode failed");
+void LlamaResidencyAdapter::DecodeTokens(
+    const std::vector<llama_token>& tokens) {
+  if (context_ == nullptr) {
+    throw std::runtime_error("cannot decode llama tokens without context");
+  }
+  if (tokens.empty()) {
+    return;
+  }
+  if (options_.batch_tokens <= 0) {
+    throw std::runtime_error("llama batch size must be positive");
+  }
+
+  const llama_pos context_size =
+      static_cast<llama_pos>(llama_n_ctx(context_.get()));
+  if (next_decode_position_ + static_cast<llama_pos>(tokens.size()) >
+      context_size) {
+    throw std::runtime_error("llama tokens exceed configured context size");
+  }
+
+  const int32_t batch_capacity = static_cast<int32_t>(options_.batch_tokens);
+  ScopedLlamaBatch scoped_batch(batch_capacity);
+  llama_batch* batch = scoped_batch.get();
+
+  std::size_t token_offset = 0;
+  while (token_offset < tokens.size()) {
+    ClearBatch(batch);
+    while (batch->n_tokens < batch_capacity && token_offset < tokens.size()) {
+      const bool logits = token_offset + 1 == tokens.size();
+      AddTokenToBatch(batch, tokens[token_offset], next_decode_position_,
+                      options_.sequence_id, logits);
+      token_offset++;
+      next_decode_position_++;
+    }
+
+    const int32_t status = llama_decode(context_.get(), *batch);
+    if (status != 0) {
+      throw std::runtime_error("llama_decode failed");
+    }
   }
 }
 
@@ -431,6 +500,7 @@ std::size_t LlamaResidencyAdapter::RestoreFullState() {
   if (read == 0 || read > snapshot_.full_state.size()) {
     throw std::runtime_error("failed to restore full llama state");
   }
+  next_decode_position_ = snapshot_decode_position_;
   return read;
 }
 
@@ -445,7 +515,12 @@ std::size_t LlamaResidencyAdapter::RestoreSequenceState() {
   if (read == 0 || read > snapshot_.sequence_state.size()) {
     throw std::runtime_error("failed to restore llama sequence state");
   }
+  next_decode_position_ = snapshot_decode_position_;
   return read;
+}
+
+void LlamaResidencyAdapter::ResetDecodePosition() {
+  next_decode_position_ = 0;
 }
 
 }  // namespace mosaicvram

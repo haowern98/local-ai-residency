@@ -134,11 +134,12 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   std::vector<llama_token> TokenizePrompt() const;
   std::vector<llama_token> TokenizeText(const std::string& text,
                                         bool add_special) const;
-  void DecodeTokens(std::vector<llama_token>* tokens);
+  void DecodeTokens(const std::vector<llama_token>& tokens);
   llama_token GreedyToken() const;
   std::string DetokenizeTokens(const std::vector<llama_token>& tokens) const;
   std::size_t RestoreFullState();
   std::size_t RestoreSequenceState();
+  void ResetDecodePosition();
 
   LlamaResidencyOptions options_;
   BackendLifetime backend_lifetime_;
@@ -148,6 +149,8 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   BackendStateSnapshot snapshot_;
   LlamaResidencyReport report_;
   ResidencyState residency_state_ = ResidencyState::kUnloaded;
+  llama_pos next_decode_position_ = 0;
+  llama_pos snapshot_decode_position_ = 0;
 };
 
 }  // namespace mosaicvram
