@@ -134,6 +134,34 @@ const std::string& RequiredValue(const PlanLine& line, const std::string& key) {
 
 std::string BoolText(bool value) { return value ? "yes" : "no"; }
 
+std::string EscapeReportValue(const std::string& value) {
+  std::string escaped;
+  escaped.reserve(value.size());
+  for (char c : value) {
+    if (c == '\n') {
+      escaped += "\\n";
+    } else if (c == '\r') {
+      escaped += "\\r";
+    } else if (c == '\t') {
+      escaped += "\\t";
+    } else {
+      escaped.push_back(c);
+    }
+  }
+  return escaped;
+}
+
+std::string TokenListText(const std::vector<int64_t>& tokens) {
+  std::ostringstream text;
+  for (std::size_t i = 0; i < tokens.size(); ++i) {
+    if (i > 0) {
+      text << ",";
+    }
+    text << tokens[i];
+  }
+  return text.str();
+}
+
 int OptionalInt(const PlanLine& line, const std::string& key,
                 int default_value) {
   const auto it = line.values.find(key);
@@ -148,6 +176,15 @@ int OptionalInt(const PlanLine& line, const std::string& key,
     throw std::runtime_error(message.str());
   }
   return parsed;
+}
+
+std::string OptionalString(const PlanLine& line, const std::string& key,
+                           const std::string& default_value) {
+  const auto it = line.values.find(key);
+  if (it == line.values.end()) {
+    return default_value;
+  }
+  return it->second;
 }
 
 MosaicSessionId RequiredSessionId(const PlanLine& line,
@@ -186,6 +223,15 @@ std::vector<int64_t> ParseTokenList(const std::string& text, int line_number) {
     throw std::runtime_error(message.str());
   }
   return tokens;
+}
+
+std::vector<int64_t> OptionalTokenList(const PlanLine& line,
+                                       const std::string& key) {
+  const auto it = line.values.find(key);
+  if (it == line.values.end() || it->second.empty()) {
+    return {};
+  }
+  return ParseTokenList(it->second, line.line_number);
 }
 
 std::vector<PlanLine> LoadPlan(const std::string& path) {
@@ -385,6 +431,43 @@ void CaptureBaseline(SessionRuntime* session) {
   throw std::runtime_error("unsupported backend for baseline");
 }
 
+void RestoreThenGenerate(SessionRuntime* session, const PlanLine& line) {
+  (void)session;
+  (void)line;
+#ifdef MOSAICVRAM_ENABLE_LLAMA
+  if (session->backend == "llama") {
+    auto* adapter =
+        dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("llama session has invalid adapter");
+    }
+    adapter->RestoreAndGenerateContinuation(
+        RequiredValue(line, "text"),
+        OptionalInt(line, "max_tokens", 32),
+        OptionalString(line, "expect", ""));
+    return;
+  }
+#endif  // MOSAICVRAM_ENABLE_LLAMA
+
+#ifdef MOSAICVRAM_ENABLE_ONNX
+  if (session->backend == "onnx-llm") {
+    auto* adapter =
+        dynamic_cast<OnnxLlmResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("onnx-llm session has invalid adapter");
+    }
+    adapter->RestoreAndGenerateContinuation(
+        ParseTokenList(RequiredValue(line, "tokens"), line.line_number),
+        OptionalInt(line, "max_tokens", 32),
+        OptionalTokenList(line, "expect_tokens"));
+    return;
+  }
+#endif  // MOSAICVRAM_ENABLE_ONNX
+
+  throw std::runtime_error(
+      "restore_then_generate requires llama or onnx-llm");
+}
+
 void PrintAdapterReport(MosaicSessionId session_id,
                         const SessionRuntime& session) {
   (void)session_id;
@@ -412,6 +495,16 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "\n"
               << "session" << session_id
               << "_model_reload_ms=" << report.model_reload_ms << "\n";
+    if (!report.generated_text.empty() || report.generated_tokens > 0) {
+      std::cout << "session" << session_id
+                << "_generated_tokens=" << report.generated_tokens << "\n"
+                << "session" << session_id
+                << "_generated_contains_expected="
+                << BoolText(report.generated_contains_expected) << "\n"
+                << "session" << session_id
+                << "_generated_text=" << EscapeReportValue(report.generated_text)
+                << "\n";
+    }
     return;
   }
 #endif  // MOSAICVRAM_ENABLE_LLAMA
@@ -459,6 +552,16 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << report.initial_session_load_ms << "\n"
               << "session" << session_id
               << "_session_reload_ms=" << report.session_reload_ms << "\n";
+    if (!report.generated_token_ids.empty() || report.generated_tokens > 0) {
+      std::cout << "session" << session_id
+                << "_generated_tokens=" << report.generated_tokens << "\n"
+                << "session" << session_id
+                << "_generated_contains_expected="
+                << BoolText(report.generated_contains_expected) << "\n"
+                << "session" << session_id
+                << "_generated_token_ids="
+                << TokenListText(report.generated_token_ids) << "\n";
+    }
     return;
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
@@ -539,6 +642,8 @@ int RunPlan(const Options& options) {
       CheckResult(controller.RestoreSession(session_id), line.line_number);
     } else if (op == "resume_check") {
       CheckResult(controller.ResumeCheck(session_id), line.line_number);
+    } else if (op == "restore_then_generate") {
+      RestoreThenGenerate(session, line);
     } else if (op == "switch_gpu_owner") {
       const MosaicSessionId to_session_id = RequiredSessionId(line, "to");
       CheckResult(controller.SwitchGpuOwner(session_id, to_session_id),

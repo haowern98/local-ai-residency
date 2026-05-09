@@ -35,6 +35,7 @@ struct OnnxLlmResidencyReport {
   std::size_t prompt_tokens = 0;
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
+  std::size_t generated_tokens = 0;
   int64_t first_token = -1;
   int64_t baseline_next_token = -1;
   int64_t restored_next_token = -1;
@@ -46,6 +47,8 @@ struct OnnxLlmResidencyReport {
   bool decode_valid = false;
   bool cache_surface_found = false;
   bool resume_match = false;
+  bool generated_contains_expected = false;
+  std::vector<int64_t> generated_token_ids;
 };
 
 class OnnxLlmResidencyAdapter : public BackendStateAdapter {
@@ -59,6 +62,9 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   void Load();
   void PrefillPrompt();
   void CaptureBaselineNextToken();
+  void RestoreAndGenerateContinuation(
+      const std::vector<int64_t>& tokens, int max_tokens,
+      const std::vector<int64_t>& expected_tokens);
 
   BackendStateSnapshot& SaveState() override;
   void EvictContext() override;

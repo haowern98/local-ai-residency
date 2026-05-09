@@ -152,6 +152,15 @@ void CountLogitValue(float value, OnnxLlmResidencyReport* report) {
   ++report->logits_finite_count;
 }
 
+bool ContainsSubsequence(const std::vector<int64_t>& values,
+                         const std::vector<int64_t>& expected) {
+  if (expected.empty() || values.size() < expected.size()) {
+    return false;
+  }
+  return std::search(values.begin(), values.end(), expected.begin(),
+                     expected.end()) != values.end();
+}
+
 std::string DecodeFailureMessage(const OnnxLlmResidencyReport& report) {
   std::ostringstream message;
   message << "ONNX LLM decode produced no valid next token"
@@ -320,6 +329,33 @@ bool OnnxLlmResidencyAdapter::ResumeCheck() {
                          result.next_token >= 0 &&
                          report_.baseline_next_token == result.next_token;
   return report_.resume_match;
+}
+
+void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
+    const std::vector<int64_t>& tokens, int max_tokens,
+    const std::vector<int64_t>& expected_tokens) {
+  if (tokens.empty()) {
+    throw std::runtime_error("ONNX LLM continuation tokens are required");
+  }
+  if (max_tokens <= 0) {
+    throw std::runtime_error("max_tokens must be positive");
+  }
+  if (session_ == nullptr) {
+    ReloadModel();
+  }
+  RestoreState();
+
+  DecodeResult next = RunDecodeStep(tokens, cache_length_);
+  report_.generated_token_ids.clear();
+  report_.generated_token_ids.reserve(static_cast<std::size_t>(max_tokens));
+  for (int i = 0; i < max_tokens; ++i) {
+    report_.generated_token_ids.push_back(next.next_token);
+    next = RunDecodeStep({next.next_token}, cache_length_);
+  }
+
+  report_.generated_tokens = report_.generated_token_ids.size();
+  report_.generated_contains_expected =
+      ContainsSubsequence(report_.generated_token_ids, expected_tokens);
 }
 
 void OnnxLlmResidencyAdapter::CreateSession(double* elapsed_ms) {

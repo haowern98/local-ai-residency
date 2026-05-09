@@ -38,6 +38,7 @@ struct LlamaResidencyReport {
   std::size_t same_context_restore_bytes = 0;
   std::size_t model_reloaded_full_bytes = 0;
   std::size_t model_reloaded_sequence_bytes = 0;
+  std::size_t generated_tokens = 0;
   llama_token first_token = LLAMA_TOKEN_NULL;
   llama_token baseline_next_token = LLAMA_TOKEN_NULL;
   llama_token full_restore_next_token = LLAMA_TOKEN_NULL;
@@ -55,9 +56,11 @@ struct LlamaResidencyReport {
   bool same_context_pointer_preserved = false;
   bool model_reloaded_full_restore_match = false;
   bool model_reloaded_sequence_restore_match = false;
+  bool generated_contains_expected = false;
   double initial_model_load_ms = 0.0;
   double model_reload_ms = 0.0;
   double context_reload_ms = 0.0;
+  std::string generated_text;
 };
 
 class LlamaResidencyAdapter : public BackendStateAdapter {
@@ -80,6 +83,8 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckRecreatedSequenceRestore();
   void CheckModelReloadedFullRestore();
   void CheckModelReloadedSequenceRestore();
+  void RestoreAndGenerateContinuation(const std::string& text, int max_tokens,
+                                      const std::string& expected_text);
 
   BackendStateSnapshot& SaveState() override;
   void EvictContext() override;
@@ -120,8 +125,11 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   ModelPtr LoadModel() const;
   ContextPtr MakeContext() const;
   std::vector<llama_token> TokenizePrompt() const;
+  std::vector<llama_token> TokenizeText(const std::string& text,
+                                        bool add_special) const;
   void DecodeTokens(std::vector<llama_token>* tokens);
   llama_token GreedyToken() const;
+  std::string DetokenizeTokens(const std::vector<llama_token>& tokens) const;
   std::size_t RestoreFullState();
   std::size_t RestoreSequenceState();
 

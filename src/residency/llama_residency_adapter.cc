@@ -9,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "cuda/cuda_error.h"
@@ -223,6 +224,39 @@ void LlamaResidencyAdapter::CheckModelReloadedSequenceRestore() {
       report_.baseline_next_token == report_.model_reloaded_sequence_next_token;
 }
 
+void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
+    const std::string& text, int max_tokens, const std::string& expected_text) {
+  if (max_tokens <= 0) {
+    throw std::runtime_error("max_tokens must be positive");
+  }
+  if (context_ == nullptr) {
+    CreateContext();
+  }
+  RestoreFullState();
+
+  std::vector<llama_token> continuation = TokenizeText(text,
+                                                       /*add_special=*/false);
+  DecodeTokens(&continuation);
+
+  std::vector<llama_token> generated_tokens;
+  generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
+  for (int i = 0; i < max_tokens; ++i) {
+    const llama_token token = GreedyToken();
+    if (llama_vocab_is_eog(vocab_, token)) {
+      break;
+    }
+    generated_tokens.push_back(token);
+    std::vector<llama_token> next = {token};
+    DecodeTokens(&next);
+  }
+
+  report_.generated_tokens = generated_tokens.size();
+  report_.generated_text = DetokenizeTokens(generated_tokens);
+  report_.generated_contains_expected =
+      !expected_text.empty() &&
+      report_.generated_text.find(expected_text) != std::string::npos;
+}
+
 bool LlamaResidencyAdapter::ResumeCheck() {
   if (!report_.model_reloaded_full_restore_match &&
       report_.baseline_next_token != LLAMA_TOKEN_NULL &&
@@ -287,10 +321,15 @@ LlamaResidencyAdapter::ContextPtr LlamaResidencyAdapter::MakeContext() const {
 }
 
 std::vector<llama_token> LlamaResidencyAdapter::TokenizePrompt() const {
-  const int32_t text_size = static_cast<int32_t>(options_.prompt.size());
+  return TokenizeText(options_.prompt, /*add_special=*/true);
+}
+
+std::vector<llama_token> LlamaResidencyAdapter::TokenizeText(
+    const std::string& text, bool add_special) const {
+  const int32_t text_size = static_cast<int32_t>(text.size());
   int32_t token_count =
-      llama_tokenize(vocab_, options_.prompt.c_str(), text_size, nullptr, 0,
-                     /*add_special=*/true, /*parse_special=*/false);
+      llama_tokenize(vocab_, text.c_str(), text_size, nullptr, 0, add_special,
+                     /*parse_special=*/false);
   if (token_count == INT32_MIN) {
     throw std::runtime_error("llama tokenization overflow");
   }
@@ -299,9 +338,8 @@ std::vector<llama_token> LlamaResidencyAdapter::TokenizePrompt() const {
   }
 
   std::vector<llama_token> tokens(static_cast<std::size_t>(token_count));
-  token_count = llama_tokenize(vocab_, options_.prompt.c_str(), text_size,
-                               tokens.data(), token_count,
-                               /*add_special=*/true,
+  token_count = llama_tokenize(vocab_, text.c_str(), text_size, tokens.data(),
+                               token_count, add_special,
                                /*parse_special=*/false);
   if (token_count < 0) {
     throw std::runtime_error("llama tokenization failed");
@@ -341,6 +379,31 @@ llama_token LlamaResidencyAdapter::GreedyToken() const {
     throw std::runtime_error("failed to select greedy llama token");
   }
   return best_token;
+}
+
+std::string LlamaResidencyAdapter::DetokenizeTokens(
+    const std::vector<llama_token>& tokens) const {
+  if (tokens.empty()) {
+    return "";
+  }
+  std::string text;
+  text.resize(tokens.size());
+  int32_t chars = llama_detokenize(
+      vocab_, tokens.data(), static_cast<int32_t>(tokens.size()), text.data(),
+      static_cast<int32_t>(text.size()), /*remove_special=*/false,
+      /*unparse_special=*/false);
+  if (chars < 0) {
+    text.resize(static_cast<std::size_t>(-chars));
+    chars = llama_detokenize(
+        vocab_, tokens.data(), static_cast<int32_t>(tokens.size()),
+        text.data(), static_cast<int32_t>(text.size()),
+        /*remove_special=*/false, /*unparse_special=*/false);
+  }
+  if (chars < 0 || chars > static_cast<int32_t>(text.size())) {
+    throw std::runtime_error("llama detokenization failed");
+  }
+  text.resize(static_cast<std::size_t>(chars));
+  return text;
 }
 
 std::size_t LlamaResidencyAdapter::RestoreFullState() {
