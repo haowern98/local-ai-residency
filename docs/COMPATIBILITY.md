@@ -88,8 +88,9 @@ Validated locally:
 | Qwen3 4B ONNX | CUDA INT4 | Pass | `float16` logits, explicit KV cache. |
 | Qwen3 1.7B ONNX | q4/int8/uint8/quantized | Pass | `float32` logits and `float32` KV cache. |
 | Llama 3.2 1B Instruct ONNX | q4f16 | Pass | `float32` logits, explicit KV cache. |
+| Gemma 3 1B ONNX | CUDA GenAI fp16 export | Pass | Requires export with empty `GroupQueryAttention` `attention_bias`; see [GEMMA_CUDA_EXPORT.md](GEMMA_CUDA_EXPORT.md). |
 | Qwen3 1.7B ONNX | q4f16/fp16 | Blocked | Decode produced all-NaN logits with these exports. |
-| Gemma 3 1B ONNX | q4f16/fp16 | Blocked | ONNX Runtime CUDA rejected `GroupQueryAttention` with `attention_bias`. |
+| Gemma 3 1B ONNX | q4f16/fp16 community exports | Blocked | ONNX Runtime CUDA rejected `GroupQueryAttention` with non-empty `attention_bias`. |
 | AMD Qwen3 8B AWQ ONNX hybrid | RyzenAI hybrid | Blocked | Requires custom `com.ryzenai:MatMulNBits` op. |
 
 ## Mixed-Backend Handoff
