@@ -75,6 +75,7 @@ void LlamaResidencyAdapter::CreateContext() {
 }
 
 void LlamaResidencyAdapter::PrefillPrompt() {
+  Timer timer;
   if (context_ == nullptr || vocab_ == nullptr) {
     throw std::runtime_error("llama context is not ready");
   }
@@ -87,9 +88,11 @@ void LlamaResidencyAdapter::PrefillPrompt() {
   report_.prompt_tokens = prompt_tokens.size();
   DecodeTokens(&prompt_tokens);
   report_.first_token = GreedyToken();
+  report_.prefill_ms = timer.ElapsedMs();
 }
 
 BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
+  Timer timer;
   if (context_ == nullptr) {
     throw std::runtime_error("cannot save llama state without context");
   }
@@ -117,6 +120,7 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
   snapshot_.source_residency = residency_state_;
   report_.full_state_bytes = snapshot_.full_state_bytes;
   report_.sequence_state_bytes = snapshot_.sequence_state_bytes;
+  report_.save_state_ms = timer.ElapsedMs();
   return snapshot_;
 }
 
@@ -159,9 +163,11 @@ void LlamaResidencyAdapter::CheckSameContextClearAndRestore() {
 }
 
 void LlamaResidencyAdapter::EvictContext() {
+  Timer timer;
   context_.reset();
   residency_state_ = model_ == nullptr ? ResidencyState::kModelEvicted
                                        : ResidencyState::kContextEvicted;
+  report_.evict_context_ms = timer.ElapsedMs();
 }
 
 void LlamaResidencyAdapter::RecreateContext() { CreateContext(); }
@@ -185,10 +191,12 @@ void LlamaResidencyAdapter::CheckRecreatedSequenceRestore() {
 }
 
 void LlamaResidencyAdapter::EvictModel() {
+  Timer timer;
   context_.reset();
   model_.reset();
   vocab_ = nullptr;
   residency_state_ = ResidencyState::kModelEvicted;
+  report_.evict_model_ms = timer.ElapsedMs();
 }
 
 void LlamaResidencyAdapter::ReloadModel() {
@@ -200,10 +208,12 @@ void LlamaResidencyAdapter::ReloadModel() {
 }
 
 void LlamaResidencyAdapter::RestoreState() {
+  Timer timer;
   if (context_ == nullptr) {
     CreateContext();
   }
   report_.model_reloaded_full_bytes = RestoreFullState();
+  report_.restore_state_ms = timer.ElapsedMs();
 }
 
 void LlamaResidencyAdapter::CheckModelReloadedFullRestore() {
@@ -226,6 +236,7 @@ void LlamaResidencyAdapter::CheckModelReloadedSequenceRestore() {
 
 void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
     const std::string& text, int max_tokens, const std::string& expected_text) {
+  Timer timer;
   if (max_tokens <= 0) {
     throw std::runtime_error("max_tokens must be positive");
   }
@@ -255,9 +266,11 @@ void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
   report_.generated_contains_expected =
       !expected_text.empty() &&
       report_.generated_text.find(expected_text) != std::string::npos;
+  report_.restore_generate_ms = timer.ElapsedMs();
 }
 
 bool LlamaResidencyAdapter::ResumeCheck() {
+  Timer timer;
   if (!report_.model_reloaded_full_restore_match &&
       report_.baseline_next_token != LLAMA_TOKEN_NULL &&
       report_.first_token != LLAMA_TOKEN_NULL) {
@@ -274,15 +287,18 @@ bool LlamaResidencyAdapter::ResumeCheck() {
       report_.recreated_sequence_next_token == LLAMA_TOKEN_NULL &&
       report_.same_context_restore_next_token == LLAMA_TOKEN_NULL &&
       report_.model_reloaded_sequence_next_token == LLAMA_TOKEN_NULL) {
+    report_.resume_check_ms = timer.ElapsedMs();
     return report_.model_reloaded_full_restore_match;
   }
 
-  return report_.full_restore_match && report_.sequence_restore_match &&
-         report_.recreated_full_restore_match &&
-         report_.recreated_sequence_restore_match &&
-         report_.same_context_restore_match &&
-         report_.model_reloaded_full_restore_match &&
-         report_.model_reloaded_sequence_restore_match;
+  const bool ok = report_.full_restore_match && report_.sequence_restore_match &&
+                  report_.recreated_full_restore_match &&
+                  report_.recreated_sequence_restore_match &&
+                  report_.same_context_restore_match &&
+                  report_.model_reloaded_full_restore_match &&
+                  report_.model_reloaded_sequence_restore_match;
+  report_.resume_check_ms = timer.ElapsedMs();
+  return ok;
 }
 
 int LlamaResidencyAdapter::context_tokens() const {

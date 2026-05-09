@@ -43,6 +43,13 @@ struct OnnxLlmResidencyReport {
   double restored_logits_checksum = 0.0;
   double initial_session_load_ms = 0.0;
   double session_reload_ms = 0.0;
+  double prefill_ms = 0.0;
+  double save_state_ms = 0.0;
+  double evict_context_ms = 0.0;
+  double evict_model_ms = 0.0;
+  double restore_state_ms = 0.0;
+  double resume_check_ms = 0.0;
+  double restore_generate_ms = 0.0;
   bool position_ids_present = false;
   bool decode_valid = false;
   bool cache_surface_found = false;

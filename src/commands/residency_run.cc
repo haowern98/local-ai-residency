@@ -494,7 +494,21 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_initial_model_load_ms=" << report.initial_model_load_ms
               << "\n"
               << "session" << session_id
-              << "_model_reload_ms=" << report.model_reload_ms << "\n";
+              << "_model_reload_ms=" << report.model_reload_ms << "\n"
+              << "session" << session_id
+              << "_prefill_ms=" << report.prefill_ms << "\n"
+              << "session" << session_id
+              << "_save_state_ms=" << report.save_state_ms << "\n"
+              << "session" << session_id
+              << "_evict_context_ms=" << report.evict_context_ms << "\n"
+              << "session" << session_id
+              << "_evict_model_ms=" << report.evict_model_ms << "\n"
+              << "session" << session_id
+              << "_restore_state_ms=" << report.restore_state_ms << "\n"
+              << "session" << session_id
+              << "_resume_check_ms=" << report.resume_check_ms << "\n"
+              << "session" << session_id
+              << "_restore_generate_ms=" << report.restore_generate_ms << "\n";
     if (!report.generated_text.empty() || report.generated_tokens > 0) {
       std::cout << "session" << session_id
                 << "_generated_tokens=" << report.generated_tokens << "\n"
@@ -551,7 +565,21 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "session" << session_id << "_initial_session_load_ms="
               << report.initial_session_load_ms << "\n"
               << "session" << session_id
-              << "_session_reload_ms=" << report.session_reload_ms << "\n";
+              << "_session_reload_ms=" << report.session_reload_ms << "\n"
+              << "session" << session_id
+              << "_prefill_ms=" << report.prefill_ms << "\n"
+              << "session" << session_id
+              << "_save_state_ms=" << report.save_state_ms << "\n"
+              << "session" << session_id
+              << "_evict_context_ms=" << report.evict_context_ms << "\n"
+              << "session" << session_id
+              << "_evict_model_ms=" << report.evict_model_ms << "\n"
+              << "session" << session_id
+              << "_restore_state_ms=" << report.restore_state_ms << "\n"
+              << "session" << session_id
+              << "_resume_check_ms=" << report.resume_check_ms << "\n"
+              << "session" << session_id
+              << "_restore_generate_ms=" << report.restore_generate_ms << "\n";
     if (!report.generated_token_ids.empty() || report.generated_tokens > 0) {
       std::cout << "session" << session_id
                 << "_generated_tokens=" << report.generated_tokens << "\n"

@@ -60,6 +60,13 @@ struct LlamaResidencyReport {
   double initial_model_load_ms = 0.0;
   double model_reload_ms = 0.0;
   double context_reload_ms = 0.0;
+  double prefill_ms = 0.0;
+  double save_state_ms = 0.0;
+  double evict_context_ms = 0.0;
+  double evict_model_ms = 0.0;
+  double restore_state_ms = 0.0;
+  double resume_check_ms = 0.0;
+  double restore_generate_ms = 0.0;
   std::string generated_text;
 };
 

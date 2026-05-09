@@ -239,10 +239,12 @@ void OnnxLlmResidencyAdapter::Load() {
 }
 
 void OnnxLlmResidencyAdapter::PrefillPrompt() {
+  Timer timer;
   ValidateReadyForDecode();
   const DecodeResult result = RunDecodeStep(options_.prompt_tokens, 0);
   report_.first_token = result.next_token;
   report_.prompt_tokens = options_.prompt_tokens.size();
+  report_.prefill_ms = timer.ElapsedMs();
 }
 
 void OnnxLlmResidencyAdapter::CaptureBaselineNextToken() {
@@ -254,6 +256,7 @@ void OnnxLlmResidencyAdapter::CaptureBaselineNextToken() {
 }
 
 BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
+  Timer timer;
   ValidateReadyForDecode();
   const std::size_t bytes = CacheBytes();
   snapshot_.full_state.Allocate(bytes);
@@ -269,21 +272,26 @@ BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
   snapshot_.source_residency = residency_state_;
   snapshot_cache_length_ = cache_length_;
   report_.kv_state_bytes = bytes;
+  report_.save_state_ms = timer.ElapsedMs();
   return snapshot_;
 }
 
 void OnnxLlmResidencyAdapter::EvictContext() {
+  Timer timer;
   FreeCache();
   residency_state_ = session_ == nullptr ? ResidencyState::kModelEvicted
                                          : ResidencyState::kContextEvicted;
+  report_.evict_context_ms = timer.ElapsedMs();
 }
 
 void OnnxLlmResidencyAdapter::EvictModel() {
+  Timer timer;
   FreeCache();
   session_.reset();
   session_options_.reset();
   env_.reset();
   residency_state_ = ResidencyState::kModelEvicted;
+  report_.evict_model_ms = timer.ElapsedMs();
 }
 
 void OnnxLlmResidencyAdapter::ReloadModel() {
@@ -295,6 +303,7 @@ void OnnxLlmResidencyAdapter::ReloadModel() {
 }
 
 void OnnxLlmResidencyAdapter::RestoreState() {
+  Timer timer;
   if (snapshot_.full_state.empty()) {
     throw std::runtime_error("ONNX LLM KV snapshot is empty");
   }
@@ -317,9 +326,11 @@ void OnnxLlmResidencyAdapter::RestoreState() {
   }
   report_.restored_kv_state_bytes = copied;
   residency_state_ = ResidencyState::kResident;
+  report_.restore_state_ms = timer.ElapsedMs();
 }
 
 bool OnnxLlmResidencyAdapter::ResumeCheck() {
+  Timer timer;
   ValidateReadyForDecode();
   const DecodeResult result =
       RunDecodeStep({report_.first_token}, cache_length_);
@@ -328,12 +339,14 @@ bool OnnxLlmResidencyAdapter::ResumeCheck() {
   report_.resume_match = report_.baseline_next_token >= 0 &&
                          result.next_token >= 0 &&
                          report_.baseline_next_token == result.next_token;
+  report_.resume_check_ms = timer.ElapsedMs();
   return report_.resume_match;
 }
 
 void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
     const std::vector<int64_t>& tokens, int max_tokens,
     const std::vector<int64_t>& expected_tokens) {
+  Timer timer;
   if (tokens.empty()) {
     throw std::runtime_error("ONNX LLM continuation tokens are required");
   }
@@ -356,6 +369,7 @@ void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
   report_.generated_tokens = report_.generated_token_ids.size();
   report_.generated_contains_expected =
       ContainsSubsequence(report_.generated_token_ids, expected_tokens);
+  report_.restore_generate_ms = timer.ElapsedMs();
 }
 
 void OnnxLlmResidencyAdapter::CreateSession(double* elapsed_ms) {
