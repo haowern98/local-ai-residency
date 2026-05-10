@@ -19,6 +19,7 @@ struct OnnxLlmResidencyOptions {
   MosaicSessionId session_id = 2;
   std::string model_path;
   std::vector<int64_t> prompt_tokens;
+  int prefill_chunk_tokens = 512;
   int device_index = 0;
 };
 
@@ -33,6 +34,8 @@ struct OnnxLlmResidencyReport {
   std::size_t logits_pos_inf_count = 0;
   std::size_t logits_neg_inf_count = 0;
   std::size_t prompt_tokens = 0;
+  std::size_t prefill_chunks = 0;
+  int prefill_chunk_tokens = 0;
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
   std::size_t generated_tokens = 0;
@@ -120,7 +123,7 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   void DiscoverModelIo();
   void AllocateInitialCache();
   DecodeResult RunDecodeStep(const std::vector<int64_t>& input_tokens,
-                             int64_t past_length);
+                             int64_t past_length, bool read_logits);
   void ReplaceCache(std::vector<KvTensor>* output_tensors,
                     int64_t cache_length);
   void FreeCache();

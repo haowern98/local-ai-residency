@@ -110,7 +110,7 @@ A plan declares sessions and then executes lifecycle steps:
 
 ```text
 session id=1 backend=llama model="models\qwen.gguf" prompt="My name is xjghft. Remember this." ctx=512 batch=512 gpu_layers=-1 device=0
-session id=2 backend=onnx-llm model="models\qwen3.onnx" tokens=151644,872,198,9707,151645,198 device=0
+session id=2 backend=onnx-llm model="models\qwen3.onnx" tokens=151644,872,198,9707,151645,198 prefill_chunk=512 device=0
 
 step op=load session=1
 step op=prefill session=1
@@ -168,6 +168,11 @@ step op=restore_then_generate session=2 tokens=3555,374,847,829,30 max_tokens=32
 The `expect` and `expect_tokens` fields are optional. They are useful for
 human-readable demos, while `resume_match=yes` remains the stricter correctness
 signal.
+
+ONNX LLM sessions accept `prefill_chunk=<tokens>` to process long prompts as
+repeated `[1, chunk_len]` ONNX Runtime calls while carrying the KV cache forward.
+This mirrors ONNX's tensor-shaped execution model instead of submitting one
+large prompt tensor.
 
 ## Validation Results
 

@@ -227,6 +227,9 @@ void OnnxLlmResidencyAdapter::Load() {
   if (options_.prompt_tokens.empty()) {
     throw std::runtime_error("ONNX LLM prompt tokens are required");
   }
+  if (options_.prefill_chunk_tokens <= 0) {
+    throw std::runtime_error("ONNX LLM prefill chunk size must be positive");
+  }
   MOSAICVRAM_CUDA_CHECK(cudaSetDevice(options_.device_index),
                         "set ONNX LLM CUDA device");
 
@@ -241,16 +244,35 @@ void OnnxLlmResidencyAdapter::Load() {
 void OnnxLlmResidencyAdapter::PrefillPrompt() {
   Timer timer;
   ValidateReadyForDecode();
-  const DecodeResult result = RunDecodeStep(options_.prompt_tokens, 0);
+  DecodeResult result;
+  const std::size_t chunk_size =
+      static_cast<std::size_t>(options_.prefill_chunk_tokens);
+  std::size_t token_offset = 0;
+  std::size_t chunk_count = 0;
+  while (token_offset < options_.prompt_tokens.size()) {
+    const std::size_t remaining = options_.prompt_tokens.size() - token_offset;
+    const std::size_t current_chunk_size = std::min(chunk_size, remaining);
+    const bool final_chunk =
+        token_offset + current_chunk_size == options_.prompt_tokens.size();
+    const auto begin = options_.prompt_tokens.begin() +
+                       static_cast<std::ptrdiff_t>(token_offset);
+    const auto end = begin + static_cast<std::ptrdiff_t>(current_chunk_size);
+    const std::vector<int64_t> chunk_tokens(begin, end);
+    result = RunDecodeStep(chunk_tokens, cache_length_, final_chunk);
+    token_offset += current_chunk_size;
+    ++chunk_count;
+  }
   report_.first_token = result.next_token;
   report_.prompt_tokens = options_.prompt_tokens.size();
+  report_.prefill_chunks = chunk_count;
+  report_.prefill_chunk_tokens = options_.prefill_chunk_tokens;
   report_.prefill_ms = timer.ElapsedMs();
 }
 
 void OnnxLlmResidencyAdapter::CaptureBaselineNextToken() {
   ValidateReadyForDecode();
   const DecodeResult result =
-      RunDecodeStep({report_.first_token}, cache_length_);
+      RunDecodeStep({report_.first_token}, cache_length_, true);
   report_.baseline_next_token = result.next_token;
   report_.baseline_logits_checksum = result.logits_checksum;
 }
@@ -333,7 +355,7 @@ bool OnnxLlmResidencyAdapter::ResumeCheck() {
   Timer timer;
   ValidateReadyForDecode();
   const DecodeResult result =
-      RunDecodeStep({report_.first_token}, cache_length_);
+      RunDecodeStep({report_.first_token}, cache_length_, true);
   report_.restored_next_token = result.next_token;
   report_.restored_logits_checksum = result.logits_checksum;
   report_.resume_match = report_.baseline_next_token >= 0 &&
@@ -358,12 +380,12 @@ void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
   }
   RestoreState();
 
-  DecodeResult next = RunDecodeStep(tokens, cache_length_);
+  DecodeResult next = RunDecodeStep(tokens, cache_length_, true);
   report_.generated_token_ids.clear();
   report_.generated_token_ids.reserve(static_cast<std::size_t>(max_tokens));
   for (int i = 0; i < max_tokens; ++i) {
     report_.generated_token_ids.push_back(next.next_token);
-    next = RunDecodeStep({next.next_token}, cache_length_);
+    next = RunDecodeStep({next.next_token}, cache_length_, true);
   }
 
   report_.generated_tokens = report_.generated_token_ids.size();
@@ -559,7 +581,8 @@ void OnnxLlmResidencyAdapter::AllocateInitialCache() {
 }
 
 OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
-    const std::vector<int64_t>& input_tokens, int64_t past_length) {
+    const std::vector<int64_t>& input_tokens, int64_t past_length,
+    bool read_logits) {
   if (input_tokens.empty()) {
     throw std::runtime_error("ONNX LLM decode requires tokens");
   }
@@ -653,6 +676,11 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
   report_.logits_pos_inf_count = 0;
   report_.logits_neg_inf_count = 0;
   report_.decode_valid = false;
+
+  if (!read_logits) {
+    ReplaceCache(&present_tensors, total_length);
+    return DecodeResult{-1, 0.0};
+  }
 
   if (logits_element_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
     std::vector<std::uint16_t> host_logits(logits_values);

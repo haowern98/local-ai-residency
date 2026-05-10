@@ -332,6 +332,8 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.model_path = RequiredValue(line, "model");
     options.prompt_tokens =
         ParseTokenList(RequiredValue(line, "tokens"), line.line_number);
+    options.prefill_chunk_tokens =
+        OptionalInt(line, "prefill_chunk", options.prefill_chunk_tokens);
     options.device_index = OptionalInt(line, "device", options.device_index);
     return std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
   }
@@ -533,6 +535,10 @@ void PrintAdapterReport(MosaicSessionId session_id,
     const OnnxLlmResidencyReport& report = adapter->report();
     std::cout << "session" << session_id
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
+              << "session" << session_id
+              << "_prefill_chunks=" << report.prefill_chunks << "\n"
+              << "session" << session_id << "_prefill_chunk_tokens="
+              << report.prefill_chunk_tokens << "\n"
               << "session" << session_id
               << "_logits_dtype=" << report.logits_dtype << "\n"
               << "session" << session_id
