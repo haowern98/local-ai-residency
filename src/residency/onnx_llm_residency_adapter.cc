@@ -609,8 +609,8 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
   binding.BindInput(input_ids_name_.c_str(), input_values.back());
 
   input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-      cpu_memory_info, mask.data(), mask.size(),
-      mask_shape.data(), mask_shape.size()));
+      cpu_memory_info, mask.data(), mask.size(), mask_shape.data(),
+      mask_shape.size()));
   binding.BindInput(attention_mask_name_.c_str(), input_values.back());
 
   if (!position_ids_name_.empty()) {
@@ -619,8 +619,8 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
       positions[static_cast<std::size_t>(i)] = past_length + i;
     }
     input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-        cpu_memory_info, positions.data(), positions.size(),
-        input_shape.data(), input_shape.size()));
+        cpu_memory_info, positions.data(), positions.size(), input_shape.data(),
+        input_shape.size()));
     binding.BindInput(position_ids_name_.c_str(), input_values.back());
   }
 

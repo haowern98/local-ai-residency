@@ -1,7 +1,7 @@
 #include "commands/residency_run.h"
 
-#include <charconv>
 #include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -443,10 +443,9 @@ void RestoreThenGenerate(SessionRuntime* session, const PlanLine& line) {
     if (adapter == nullptr) {
       throw std::runtime_error("llama session has invalid adapter");
     }
-    adapter->RestoreAndGenerateContinuation(
-        RequiredValue(line, "text"),
-        OptionalInt(line, "max_tokens", 32),
-        OptionalString(line, "expect", ""));
+    adapter->RestoreAndGenerateContinuation(RequiredValue(line, "text"),
+                                            OptionalInt(line, "max_tokens", 32),
+                                            OptionalString(line, "expect", ""));
     return;
   }
 #endif  // MOSAICVRAM_ENABLE_LLAMA
@@ -466,8 +465,7 @@ void RestoreThenGenerate(SessionRuntime* session, const PlanLine& line) {
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
 
-  throw std::runtime_error(
-      "restore_then_generate requires llama or onnx-llm");
+  throw std::runtime_error("restore_then_generate requires llama or onnx-llm");
 }
 
 void PrintAdapterReport(MosaicSessionId session_id,
@@ -497,8 +495,8 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "\n"
               << "session" << session_id
               << "_model_reload_ms=" << report.model_reload_ms << "\n"
-              << "session" << session_id
-              << "_prefill_ms=" << report.prefill_ms << "\n"
+              << "session" << session_id << "_prefill_ms=" << report.prefill_ms
+              << "\n"
               << "session" << session_id
               << "_save_state_ms=" << report.save_state_ms << "\n"
               << "session" << session_id
@@ -514,12 +512,10 @@ void PrintAdapterReport(MosaicSessionId session_id,
     if (!report.generated_text.empty() || report.generated_tokens > 0) {
       std::cout << "session" << session_id
                 << "_generated_tokens=" << report.generated_tokens << "\n"
-                << "session" << session_id
-                << "_generated_contains_expected="
+                << "session" << session_id << "_generated_contains_expected="
                 << BoolText(report.generated_contains_expected) << "\n"
-                << "session" << session_id
-                << "_generated_text=" << EscapeReportValue(report.generated_text)
-                << "\n";
+                << "session" << session_id << "_generated_text="
+                << EscapeReportValue(report.generated_text) << "\n";
     }
     return;
   }
@@ -537,8 +533,8 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
               << "session" << session_id
               << "_prefill_chunks=" << report.prefill_chunks << "\n"
-              << "session" << session_id << "_prefill_chunk_tokens="
-              << report.prefill_chunk_tokens << "\n"
+              << "session" << session_id
+              << "_prefill_chunk_tokens=" << report.prefill_chunk_tokens << "\n"
               << "session" << session_id
               << "_logits_dtype=" << report.logits_dtype << "\n"
               << "session" << session_id
@@ -548,11 +544,9 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "session" << session_id
               << "_logits_nan_count=" << report.logits_nan_count << "\n"
               << "session" << session_id
-              << "_logits_pos_inf_count=" << report.logits_pos_inf_count
-              << "\n"
+              << "_logits_pos_inf_count=" << report.logits_pos_inf_count << "\n"
               << "session" << session_id
-              << "_logits_neg_inf_count=" << report.logits_neg_inf_count
-              << "\n"
+              << "_logits_neg_inf_count=" << report.logits_neg_inf_count << "\n"
               << "session" << session_id
               << "_decode_valid=" << BoolText(report.decode_valid) << "\n"
               << "session" << session_id << "_position_ids_present="
@@ -560,20 +554,21 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "session" << session_id
               << "_kv_state_bytes=" << report.kv_state_bytes << "\n"
               << "session" << session_id
-              << "_restored_kv_state_bytes="
-              << report.restored_kv_state_bytes << "\n"
+              << "_restored_kv_state_bytes=" << report.restored_kv_state_bytes
+              << "\n"
               << "session" << session_id
               << "_baseline_next_token=" << report.baseline_next_token << "\n"
               << "session" << session_id
               << "_restored_next_token=" << report.restored_next_token << "\n"
               << "session" << session_id
               << "_resume_match=" << BoolText(report.resume_match) << "\n"
-              << "session" << session_id << "_initial_session_load_ms="
-              << report.initial_session_load_ms << "\n"
+              << "session" << session_id
+              << "_initial_session_load_ms=" << report.initial_session_load_ms
+              << "\n"
               << "session" << session_id
               << "_session_reload_ms=" << report.session_reload_ms << "\n"
-              << "session" << session_id
-              << "_prefill_ms=" << report.prefill_ms << "\n"
+              << "session" << session_id << "_prefill_ms=" << report.prefill_ms
+              << "\n"
               << "session" << session_id
               << "_save_state_ms=" << report.save_state_ms << "\n"
               << "session" << session_id
@@ -589,11 +584,9 @@ void PrintAdapterReport(MosaicSessionId session_id,
     if (!report.generated_token_ids.empty() || report.generated_tokens > 0) {
       std::cout << "session" << session_id
                 << "_generated_tokens=" << report.generated_tokens << "\n"
-                << "session" << session_id
-                << "_generated_contains_expected="
+                << "session" << session_id << "_generated_contains_expected="
                 << BoolText(report.generated_contains_expected) << "\n"
-                << "session" << session_id
-                << "_generated_token_ids="
+                << "session" << session_id << "_generated_token_ids="
                 << TokenListText(report.generated_token_ids) << "\n";
     }
     return;

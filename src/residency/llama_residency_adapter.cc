@@ -35,9 +35,7 @@ class ScopedLlamaBatch {
   llama_batch batch_;
 };
 
-void ClearBatch(llama_batch* batch) {
-  batch->n_tokens = 0;
-}
+void ClearBatch(llama_batch* batch) { batch->n_tokens = 0; }
 
 void AddTokenToBatch(llama_batch* batch, llama_token token, llama_pos position,
                      llama_seq_id sequence_id, bool logits) {
@@ -328,7 +326,8 @@ bool LlamaResidencyAdapter::ResumeCheck() {
     return report_.model_reloaded_full_restore_match;
   }
 
-  const bool ok = report_.full_restore_match && report_.sequence_restore_match &&
+  const bool ok = report_.full_restore_match &&
+                  report_.sequence_restore_match &&
                   report_.recreated_full_restore_match &&
                   report_.recreated_sequence_restore_match &&
                   report_.same_context_restore_match &&
@@ -480,8 +479,8 @@ std::string LlamaResidencyAdapter::DetokenizeTokens(
   if (chars < 0) {
     text.resize(static_cast<std::size_t>(-chars));
     chars = llama_detokenize(
-        vocab_, tokens.data(), static_cast<int32_t>(tokens.size()),
-        text.data(), static_cast<int32_t>(text.size()),
+        vocab_, tokens.data(), static_cast<int32_t>(tokens.size()), text.data(),
+        static_cast<int32_t>(text.size()),
         /*remove_special=*/false, /*unparse_special=*/false);
   }
   if (chars < 0 || chars > static_cast<int32_t>(text.size())) {
@@ -519,9 +518,7 @@ std::size_t LlamaResidencyAdapter::RestoreSequenceState() {
   return read;
 }
 
-void LlamaResidencyAdapter::ResetDecodePosition() {
-  next_decode_position_ = 0;
-}
+void LlamaResidencyAdapter::ResetDecodePosition() { next_decode_position_ = 0; }
 
 }  // namespace mosaicvram
 
