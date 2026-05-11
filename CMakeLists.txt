@@ -42,6 +42,7 @@ add_executable(
   src/cuda/cuda_error.cc
   src/cuda/cuda_stream.cc
   src/main.cc
+  src/reload/mmap_file.cc
   src/reload/reload_mode.cc
   src/residency/residency_controller.cc
   src/util/timer.cc)

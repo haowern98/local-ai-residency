@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "cuda/cuda_error.h"
+#include "reload/mmap_file.h"
 #include "reload/reload_mode.h"
 #include "util/timer.h"
 
@@ -279,11 +280,43 @@ void LlamaResidencyAdapter::ReloadModel() {
   }
 
   report_.ram_before_reload_bytes = GetProcessRamBytes();
-  Timer total_timer;
 
+  Timer file_timer;
+  MmapFile mmap_file;
+
+  if (reload_policy_.mode == ReloadMode::kMmap) {
+    if (!mmap_file.Open(options_.model_path)) {
+      std::cerr << "[reload] mmap failed — falling back to cold reload\n";
+      reload_policy_.mode = ReloadMode::kCold;
+    } else {
+      report_.reload_file_open_ms = file_timer.ElapsedMs();
+
+      if (reload_policy_.prefetch_mb > 0) {
+        const std::size_t prefetch_bytes =
+            reload_policy_.prefetch_mb * 1024 * 1024;
+        const std::size_t file_size = mmap_file.size();
+        for (std::size_t offset = 0; offset < file_size;
+             offset += prefetch_bytes) {
+          mmap_file.PrefetchChunk(offset, prefetch_bytes);
+        }
+        report_.reload_header_parse_ms = file_timer.ElapsedMs();
+      }
+
+      std::size_t ram_after_mmap = GetProcessRamBytes();
+      if (ram_after_mmap > report_.ram_peak_during_reload_bytes) {
+        report_.ram_peak_during_reload_bytes = ram_after_mmap;
+        report_.ram_peak_sample_ms = file_timer.ElapsedMs();
+      }
+    }
+  }
+
+  Timer total_timer;
   model_ = LoadModel();
   report_.model_reload_ms = total_timer.ElapsedMs();
-  report_.reload_file_open_ms = report_.model_reload_ms;
+
+  if (report_.reload_file_open_ms == 0.0) {
+    report_.reload_file_open_ms = report_.model_reload_ms;
+  }
 
   report_.ram_after_reload_bytes = GetProcessRamBytes();
   if (report_.ram_after_reload_bytes > report_.ram_peak_during_reload_bytes) {
