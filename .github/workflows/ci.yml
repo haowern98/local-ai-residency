@@ -2,25 +2,45 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
 jobs:
   # ── Format check ──────────────────────────────────────────────
   format:
+    name: Format check
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
       - name: clang-format check
         run: |
-          find . -name '*.cc' -o -name '*.h' | xargs clang-format --dry-run --Werror
+          find . \( -name '*.cc' -o -name '*.h' -o -name '*.cu' -o -name '*.cuh' \) \
+            -not -path './build/*' \
+            -not -path './external/*' \
+            -print0 | xargs -0 clang-format --dry-run --Werror
 
   # ── Build ─────────────────────────────────────────────────────
   build:
-    runs-on: windows-latest
+    name: Windows CUDA build
+    runs-on: windows-2022
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        shell: pwsh
+        run: |
+          choco install ninja -y
 
       - name: Install CUDA toolkit
         uses: Jimver/cuda-toolkit@v0.2.35
@@ -29,11 +49,38 @@ jobs:
           method: 'network'
           sub-packages: '["cudart", "nvcc"]'
 
-      - name: Configure
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Show toolchain
+        shell: pwsh
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+          Write-Host "CUDA_PATH=$env:CUDA_PATH"
+          where cl
+          cl
+          where nvcc
+          nvcc --version
+          where cmake
+          cmake --version
+          where ninja
+          ninja --version
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl `
+            -DCMAKE_CUDA_HOST_COMPILER=cl `
+            -DCMAKE_CUDA_ARCHITECTURES=89 `
             -DCUDAToolkit_ROOT="$env:CUDA_PATH" `
-            -DMOSAICVRAM_ENABLE_LLAMA=OFF -DMOSAICVRAM_ENABLE_ONNX=OFF
+            -DMOSAICVRAM_ENABLE_LLAMA=OFF `
+            -DMOSAICVRAM_ENABLE_ONNX=OFF
 
       - name: Build
-        run: cmake --build build --config Release
+        shell: pwsh
+        run: |
+          cmake --build build --config Release
