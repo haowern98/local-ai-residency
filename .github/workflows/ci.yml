@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Format check ──────────────────────────────────────────────
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format check
+        run: |
+          find . -name '*.cc' -o -name '*.h' | xargs clang-format --dry-run --Werror
+
+  # ── Build ─────────────────────────────────────────────────────
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2
+        with:
+          cuda: '12.5.0'
+          method: 'network'
+          sub-packages: '["cudart"]'
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DMOSAICVRAM_ENABLE_LLAMA=OFF -DMOSAICVRAM_ENABLE_ONNX=OFF
+
+      - name: Build
+        run: cmake --build build --config Release
