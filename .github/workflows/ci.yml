@@ -32,6 +32,7 @@ jobs:
       - name: Configure
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCUDAToolkit_ROOT="$env:CUDA_PATH" `
             -DMOSAICVRAM_ENABLE_LLAMA=OFF -DMOSAICVRAM_ENABLE_ONNX=OFF
 
       - name: Build
