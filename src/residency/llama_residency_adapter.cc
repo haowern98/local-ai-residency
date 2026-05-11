@@ -2,6 +2,9 @@
 
 #ifdef MOSAICVRAM_ENABLE_LLAMA
 
+#include <windows.h>
+#include <psapi.h>
+
 #include <cuda_runtime_api.h>
 
 #include <cstdint>
@@ -13,6 +16,7 @@
 #include <utility>
 
 #include "cuda/cuda_error.h"
+#include "reload/reload_mode.h"
 #include "util/timer.h"
 
 namespace mosaicvram {
@@ -50,6 +54,17 @@ void AddTokenToBatch(llama_batch* batch, llama_token token, llama_pos position,
   batch->n_tokens++;
 }
 
+std::size_t GetProcessRamBytes() {
+  PROCESS_MEMORY_COUNTERS_EX pmc{};
+  pmc.cb = sizeof(pmc);
+  if (GetProcessMemoryInfo(GetCurrentProcess(),
+                           reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                           sizeof(pmc))) {
+    return pmc.WorkingSetSize;
+  }
+  return 0;
+}
+
 }  // namespace
 
 LlamaResidencyAdapter::BackendLifetime::BackendLifetime() {
@@ -81,6 +96,10 @@ LlamaResidencyAdapter::LlamaResidencyAdapter(LlamaResidencyOptions options)
 
 LlamaResidencyAdapter::~LlamaResidencyAdapter() = default;
 
+void LlamaResidencyAdapter::set_reload_policy(ReloadPolicy policy) {
+  reload_policy_ = std::move(policy);
+}
+
 void LlamaResidencyAdapter::QuietLog(ggml_log_level level, const char* text,
                                      void* user_data) {
   (void)user_data;
@@ -94,10 +113,20 @@ void LlamaResidencyAdapter::Load() {
                         "set llama CUDA device");
   llama_log_set(QuietLog, nullptr);
 
-  Timer timer;
+  std::size_t free_bytes = 0;
+  std::size_t total_bytes = 0;
+  MOSAICVRAM_CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes),
+                        "read VRAM before llama load");
+  report_.vram_before_load_bytes = total_bytes - free_bytes;
+
+  Timer total_timer;
   model_ = LoadModel();
-  report_.initial_model_load_ms = timer.ElapsedMs();
+  report_.initial_model_load_ms = total_timer.ElapsedMs();
   vocab_ = llama_model_get_vocab(model_.get());
+
+  MOSAICVRAM_CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes),
+                        "read VRAM after llama load");
+  report_.vram_after_load_bytes = total_bytes - free_bytes;
   residency_state_ = ResidencyState::kResident;
 }
 
@@ -233,14 +262,42 @@ void LlamaResidencyAdapter::EvictModel() {
   model_.reset();
   vocab_ = nullptr;
   residency_state_ = ResidencyState::kModelEvicted;
+
+  std::size_t free_bytes = 0;
+  std::size_t total_bytes = 0;
+  MOSAICVRAM_CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes),
+                        "read VRAM after llama evict model");
+  report_.vram_after_evict_model_bytes = total_bytes - free_bytes;
   report_.evict_model_ms = timer.ElapsedMs();
 }
 
 void LlamaResidencyAdapter::ReloadModel() {
-  Timer timer;
+  if (reload_policy_.mode == ReloadMode::kStreamedVram) {
+    std::cerr << "[reload] streamed_vram reload not supported for this backend "
+                 "yet — falling back to cold reload\n";
+    reload_policy_.mode = ReloadMode::kCold;
+  }
+
+  report_.ram_before_reload_bytes = GetProcessRamBytes();
+  Timer total_timer;
+
   model_ = LoadModel();
-  report_.model_reload_ms = timer.ElapsedMs();
+  report_.model_reload_ms = total_timer.ElapsedMs();
+  report_.reload_file_open_ms = report_.model_reload_ms;
+
+  report_.ram_after_reload_bytes = GetProcessRamBytes();
+  if (report_.ram_after_reload_bytes > report_.ram_peak_during_reload_bytes) {
+    report_.ram_peak_during_reload_bytes = report_.ram_after_reload_bytes;
+  }
+  report_.ram_peak_sample_ms = report_.model_reload_ms;
+
   vocab_ = llama_model_get_vocab(model_.get());
+
+  std::size_t free_bytes = 0;
+  std::size_t total_bytes = 0;
+  MOSAICVRAM_CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes),
+                        "read VRAM after llama reload model");
+  report_.vram_after_reload_bytes = total_bytes - free_bytes;
   residency_state_ = ResidencyState::kContextEvicted;
 }
 

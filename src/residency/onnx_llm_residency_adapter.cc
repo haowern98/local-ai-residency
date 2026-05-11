@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <sstream>
@@ -223,6 +224,10 @@ OnnxLlmResidencyAdapter::OnnxLlmResidencyAdapter(
 
 OnnxLlmResidencyAdapter::~OnnxLlmResidencyAdapter() = default;
 
+void OnnxLlmResidencyAdapter::set_reload_policy(ReloadPolicy policy) {
+  reload_policy_ = std::move(policy);
+}
+
 void OnnxLlmResidencyAdapter::Load() {
   if (options_.prompt_tokens.empty()) {
     throw std::runtime_error("ONNX LLM prompt tokens are required");
@@ -317,6 +322,17 @@ void OnnxLlmResidencyAdapter::EvictModel() {
 }
 
 void OnnxLlmResidencyAdapter::ReloadModel() {
+  if (reload_policy_.mode == ReloadMode::kMmap) {
+    // mmap reload: ONNX Runtime reads from mmap'd file via normal session
+    // creation. The mmap improves file I/O but session creation is unchanged.
+    reload_policy_.mode = ReloadMode::kCold;
+  }
+  if (reload_policy_.mode == ReloadMode::kStreamedVram) {
+    std::cerr << "[reload] streamed_vram reload not supported for ONNX Runtime "
+                 "backend — falling back to cold reload\n";
+    reload_policy_.mode = ReloadMode::kCold;
+  }
+
   double load_ms = 0.0;
   CreateSession(&load_ms);
   report_.session_reload_ms = load_ms;

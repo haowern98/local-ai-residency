@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "reload/reload_mode.h"
 #include "residency/backend_state_adapter.h"
 #include "residency/residency_controller.h"
 
@@ -187,6 +188,25 @@ std::string OptionalString(const PlanLine& line, const std::string& key,
   return it->second;
 }
 
+ReloadPolicy ParseReloadPolicy(const PlanLine& line) {
+  ReloadPolicy policy;
+  const std::string mode_str = OptionalString(line, "reload_mode", "cold");
+  if (mode_str == "mmap") {
+    policy.mode = ReloadMode::kMmap;
+  } else if (mode_str == "streamed_vram") {
+    policy.mode = ReloadMode::kStreamedVram;
+  }
+  policy.ram_budget_mb =
+      static_cast<std::size_t>(OptionalInt(line, "ram_budget_mb", 0));
+  policy.prefetch_mb =
+      static_cast<std::size_t>(OptionalInt(line, "prefetch_mb", 0));
+  policy.pack_path = OptionalString(line, "pack_path", "");
+  const std::string create_pack_str =
+      OptionalString(line, "create_pack", "no");
+  policy.create_pack = create_pack_str == "yes";
+  return policy;
+}
+
 MosaicSessionId RequiredSessionId(const PlanLine& line,
                                   const std::string& key) {
   std::uint64_t parsed = 0;
@@ -321,7 +341,10 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.device_index = OptionalInt(line, "device", options.device_index);
     options.threads = OptionalInt(line, "threads", options.threads);
     options.sequence_id = OptionalInt(line, "seq_id", options.sequence_id);
-    return std::make_unique<LlamaResidencyAdapter>(std::move(options));
+    auto adapter =
+        std::make_unique<LlamaResidencyAdapter>(std::move(options));
+    adapter->set_reload_policy(ParseReloadPolicy(line));
+    return adapter;
   }
 #endif  // MOSAICVRAM_ENABLE_LLAMA
 
@@ -335,7 +358,10 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.prefill_chunk_tokens =
         OptionalInt(line, "prefill_chunk", options.prefill_chunk_tokens);
     options.device_index = OptionalInt(line, "device", options.device_index);
-    return std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
+    auto adapter =
+        std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
+    adapter->set_reload_policy(ParseReloadPolicy(line));
+    return adapter;
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
 
@@ -485,6 +511,9 @@ void PrintAdapterReport(MosaicSessionId session_id,
     std::cout << "session" << session_id
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
               << "session" << session_id
+              << "_reload_mode=" << ReloadModeName(adapter->reload_mode())
+              << "\n"
+              << "session" << session_id
               << "_full_state_bytes=" << report.full_state_bytes << "\n"
               << "session" << session_id
               << "_baseline_next_token=" << report.baseline_next_token << "\n"
@@ -497,6 +526,37 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "\n"
               << "session" << session_id
               << "_model_reload_ms=" << report.model_reload_ms << "\n"
+              << "session" << session_id
+              << "_reload_file_open_ms=" << report.reload_file_open_ms << "\n"
+              << "session" << session_id
+              << "_reload_header_parse_ms=" << report.reload_header_parse_ms
+              << "\n"
+              << "session" << session_id
+              << "_reload_tensor_plan_ms=" << report.reload_tensor_plan_ms
+              << "\n"
+              << "session" << session_id
+              << "_reload_h2d_copy_ms=" << report.reload_h2d_copy_ms << "\n"
+              << "session" << session_id
+              << "_vram_before_load_mb="
+              << (report.vram_before_load_bytes / (1024 * 1024)) << "\n"
+              << "session" << session_id
+              << "_vram_after_load_mb="
+              << (report.vram_after_load_bytes / (1024 * 1024)) << "\n"
+              << "session" << session_id
+              << "_vram_after_evict_model_mb="
+              << (report.vram_after_evict_model_bytes / (1024 * 1024)) << "\n"
+              << "session" << session_id
+              << "_vram_after_reload_mb="
+              << (report.vram_after_reload_bytes / (1024 * 1024)) << "\n"
+              << "session" << session_id
+              << "_ram_before_reload_mb="
+              << (report.ram_before_reload_bytes / (1024 * 1024)) << "\n"
+              << "session" << session_id
+              << "_ram_peak_during_reload_mb="
+              << (report.ram_peak_during_reload_bytes / (1024 * 1024)) << "\n"
+              << "session" << session_id
+              << "_ram_after_reload_mb="
+              << (report.ram_after_reload_bytes / (1024 * 1024)) << "\n"
               << "session" << session_id
               << "_prefill_ms=" << report.prefill_ms << "\n"
               << "session" << session_id

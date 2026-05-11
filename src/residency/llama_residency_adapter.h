@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "reload/reload_mode.h"
 #include "residency/backend_state_adapter.h"
 
 namespace mosaicvram {
@@ -58,7 +59,17 @@ struct LlamaResidencyReport {
   bool model_reloaded_sequence_restore_match = false;
   bool generated_contains_expected = false;
   double initial_model_load_ms = 0.0;
+  double load_model_open_file_ms = 0.0;
+  double load_model_header_parse_ms = 0.0;
+  double load_model_tensor_plan_ms = 0.0;
+  double load_model_h2d_copy_ms = 0.0;
+  double load_model_context_init_ms = 0.0;
   double model_reload_ms = 0.0;
+  double reload_file_open_ms = 0.0;
+  double reload_header_parse_ms = 0.0;
+  double reload_tensor_plan_ms = 0.0;
+  double reload_h2d_copy_ms = 0.0;
+  double reload_context_init_ms = 0.0;
   double context_reload_ms = 0.0;
   double prefill_ms = 0.0;
   double save_state_ms = 0.0;
@@ -68,6 +79,15 @@ struct LlamaResidencyReport {
   double resume_check_ms = 0.0;
   double restore_generate_ms = 0.0;
   std::string generated_text;
+
+  std::size_t vram_before_load_bytes = 0;
+  std::size_t vram_after_load_bytes = 0;
+  std::size_t vram_after_evict_model_bytes = 0;
+  std::size_t vram_after_reload_bytes = 0;
+  std::size_t ram_before_reload_bytes = 0;
+  std::size_t ram_peak_during_reload_bytes = 0;
+  std::size_t ram_after_reload_bytes = 0;
+  double ram_peak_sample_ms = 0.0;
 };
 
 class LlamaResidencyAdapter : public BackendStateAdapter {
@@ -101,6 +121,10 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   bool ResumeCheck() override;
   ResidencyState residency_state() const override { return residency_state_; }
   MosaicSessionId session_id() const override { return options_.session_id; }
+
+  ReloadMode reload_mode() const override { return reload_policy_.mode; }
+  void set_reload_policy(ReloadPolicy policy) override;
+  const ReloadPolicy& reload_policy() const override { return reload_policy_; }
 
   const LlamaResidencyOptions& options() const { return options_; }
   const LlamaResidencyReport& report() const { return report_; }
@@ -149,6 +173,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   BackendStateSnapshot snapshot_;
   LlamaResidencyReport report_;
   ResidencyState residency_state_ = ResidencyState::kUnloaded;
+  ReloadPolicy reload_policy_;
   llama_pos next_decode_position_ = 0;
   llama_pos snapshot_decode_position_ = 0;
 };

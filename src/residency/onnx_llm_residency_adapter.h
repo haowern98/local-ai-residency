@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "reload/reload_mode.h"
 #include "residency/backend_state_adapter.h"
 
 namespace mosaicvram {
@@ -85,6 +86,10 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   ResidencyState residency_state() const override { return residency_state_; }
   MosaicSessionId session_id() const override { return options_.session_id; }
 
+  ReloadMode reload_mode() const override { return reload_policy_.mode; }
+  void set_reload_policy(ReloadPolicy policy) override;
+  const ReloadPolicy& reload_policy() const override { return reload_policy_; }
+
   const OnnxLlmResidencyReport& report() const { return report_; }
 
  private:
@@ -131,6 +136,7 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   std::size_t CacheBytes() const;
 
   OnnxLlmResidencyOptions options_;
+  ReloadPolicy reload_policy_;
   std::unique_ptr<Ort::Env> env_;
   std::unique_ptr<Ort::SessionOptions> session_options_;
   std::unique_ptr<Ort::Session> session_;

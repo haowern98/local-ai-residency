@@ -13,7 +13,11 @@
 #include <string_view>
 #include <utility>
 
+#include <windows.h>
+#include <psapi.h>
+
 #include "cuda/cuda_error.h"
+#include "reload/reload_mode.h"
 #include "residency/llama_residency_adapter.h"
 #include "util/timer.h"
 
@@ -52,6 +56,7 @@ struct LlamaStateSmokeOptions {
   std::string onnx_provider;
   std::string onnx_input;
   int onnx_iterations = 1;
+  ReloadPolicy reload_policy;
 };
 
 bool ParseInt(std::string_view text, int* value) {
@@ -156,6 +161,46 @@ bool ParseOptions(int argc, char** argv, LlamaStateSmokeOptions* options) {
     } else if (arg == "--onnx-iters") {
       if (!ParseInt(value, &options->onnx_iterations)) {
         std::cerr << "Invalid --onnx-iters value: " << value << "\n";
+        return false;
+      }
+    } else if (arg == "--reload-mode") {
+      if (value == "cold") {
+        options->reload_policy.mode = ReloadMode::kCold;
+      } else if (value == "mmap") {
+        options->reload_policy.mode = ReloadMode::kMmap;
+      } else if (value == "streamed_vram") {
+        options->reload_policy.mode = ReloadMode::kStreamedVram;
+      } else {
+        std::cerr << "Invalid --reload-mode value: " << value
+                  << " (use cold, mmap, or streamed_vram)\n";
+        return false;
+      }
+    } else if (arg == "--ram-budget-mb") {
+      int budget = 0;
+      if (!ParseInt(value, &budget) || budget < 0) {
+        std::cerr << "Invalid --ram-budget-mb value: " << value << "\n";
+        return false;
+      }
+      options->reload_policy.ram_budget_mb =
+          static_cast<std::size_t>(budget);
+    } else if (arg == "--prefetch-mb") {
+      int prefetch = 0;
+      if (!ParseInt(value, &prefetch) || prefetch < 0) {
+        std::cerr << "Invalid --prefetch-mb value: " << value << "\n";
+        return false;
+      }
+      options->reload_policy.prefetch_mb =
+          static_cast<std::size_t>(prefetch);
+    } else if (arg == "--pack-path") {
+      options->reload_policy.pack_path = std::string(value);
+    } else if (arg == "--create-pack") {
+      if (value == "yes") {
+        options->reload_policy.create_pack = true;
+      } else if (value == "no") {
+        options->reload_policy.create_pack = false;
+      } else {
+        std::cerr << "Invalid --create-pack value: " << value
+                  << " (use yes or no)\n";
         return false;
       }
     } else {
@@ -340,6 +385,7 @@ CrossBackendProofResult RunOnnxHandoff(const LlamaStateSmokeOptions& options) {
 
 int RunProof(const LlamaStateSmokeOptions& options) {
   LlamaResidencyAdapter adapter(options.llama);
+  adapter.set_reload_policy(options.reload_policy);
 
   adapter.Load();
   const VramSnapshot after_model_load_vram = CaptureVram();
@@ -422,6 +468,7 @@ int RunProof(const LlamaStateSmokeOptions& options) {
       << "prompt_tokens=" << report.prompt_tokens << "\n"
       << "context_tokens=" << adapter.context_tokens() << "\n"
       << "gpu_layers=" << options.llama.gpu_layers << "\n"
+      << "reload_mode=" << ReloadModeName(options.reload_policy.mode) << "\n"
       << "first_token=" << report.first_token << "\n"
       << "baseline_next_token=" << report.baseline_next_token << "\n"
       << "full_restore_next_token=" << report.full_restore_next_token << "\n"
@@ -518,6 +565,20 @@ int RunProof(const LlamaStateSmokeOptions& options) {
       << BytesToMiB(before_same_context_clear_vram.used_bytes) << "\n"
       << "vram_after_same_context_clear_mb="
       << BytesToMiB(after_same_context_clear_vram.used_bytes) << "\n"
+      << "vram_before_load_mb="
+      << BytesToMiB(report.vram_before_load_bytes) << "\n"
+      << "vram_after_load_mb="
+      << BytesToMiB(report.vram_after_load_bytes) << "\n"
+      << "vram_after_evict_model_mb="
+      << BytesToMiB(report.vram_after_evict_model_bytes) << "\n"
+      << "vram_after_reload_mb="
+      << BytesToMiB(report.vram_after_reload_bytes) << "\n"
+      << "ram_before_reload_mb="
+      << BytesToMiB(report.ram_before_reload_bytes) << "\n"
+      << "ram_peak_during_reload_mb="
+      << BytesToMiB(report.ram_peak_during_reload_bytes) << "\n"
+      << "ram_after_reload_mb="
+      << BytesToMiB(report.ram_after_reload_bytes) << "\n"
       << "context_evict_freed_mb=" << BytesToMiB(context_evict_freed_bytes)
       << "\n"
       << "context_evict_freed_vram="
