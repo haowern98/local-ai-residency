@@ -77,6 +77,10 @@ $env:THREADS = "8"
 $env:LLAMA_CTX = "16384"
 $env:LLAMA_BATCH = "512"
 $env:LLAMA_GPU_LAYERS = "-1"
+$env:LLAMA_USE_MMAP = "true"
+$env:LLAMA_USE_MLOCK = "false"
+$env:LLAMA_USE_DIRECT_IO = "false"
+$env:LLAMA_CHECK_TENSORS = "false"
 $env:ONNX_PREFILL_CHUNK = "512"
 ```
 
@@ -103,6 +107,22 @@ cmd /c tests\run_gpu_smoke.bat mixed
 The mixed test runs both adapters in one residency plan. It saves and evicts
 llama.cpp, runs ONNX, restores llama.cpp, then saves and evicts llama.cpp again
 so ONNX can be restored and checked too.
+
+## Llama Load Policy
+
+The smoke templates pass llama.cpp public load options through to
+`llama_model_params`:
+
+```text
+use_mmap
+use_mlock
+use_direct_io
+check_tensors
+```
+
+The default smoke settings match llama.cpp defaults. Override the environment
+variables only when testing reload behavior. `LLAMA_USE_MLOCK=true` can increase
+RAM pressure because it asks the OS to keep model pages resident.
 
 ## ONNX Tokenization
 
@@ -170,6 +190,10 @@ that the adapter saved real session state, not just model metadata.
 
 ```text
 sessionN_prompt_tokens
+sessionN_use_mmap
+sessionN_use_mlock
+sessionN_use_direct_io
+sessionN_check_tensors
 sessionN_prefill_ms
 sessionN_save_state_ms
 sessionN_evict_context_ms

@@ -213,6 +213,22 @@ Python and Hugging Face Transformers are not used at runtime.
 `tokens_file=` remains available as an advanced pre-tokenized path. Inline
 `tokens=` is not accepted for ONNX session prompts.
 
+## Llama Load Policy
+
+llama.cpp sessions can pass through public llama.cpp model-load options:
+
+```text
+use_mmap=true|false
+use_mlock=true|false
+use_direct_io=true|false
+check_tensors=true|false
+```
+
+The defaults match llama.cpp defaults: `use_mmap=true`, `use_mlock=false`,
+`use_direct_io=false`, and `check_tensors=false`. These options are for reload
+diagnostics and platform tuning. `use_mlock=true` can increase RAM pressure
+because it asks the OS to keep mapped model pages resident.
+
 ## Reload Metrics
 
 `residency-run` reports derived timing fields for each session:

@@ -138,6 +138,18 @@ const std::string& RequiredValue(const PlanLine& line, const std::string& key) {
 
 std::string BoolText(bool value) { return value ? "yes" : "no"; }
 
+bool ParseBool(std::string_view text, bool* value) {
+  if (text == "true" || text == "yes" || text == "1") {
+    *value = true;
+    return true;
+  }
+  if (text == "false" || text == "no" || text == "0") {
+    *value = false;
+    return true;
+  }
+  return false;
+}
+
 std::string EscapeReportValue(const std::string& value) {
   std::string escaped;
   escaped.reserve(value.size());
@@ -189,6 +201,22 @@ std::string OptionalString(const PlanLine& line, const std::string& key,
     return default_value;
   }
   return it->second;
+}
+
+bool OptionalBool(const PlanLine& line, const std::string& key,
+                  bool default_value) {
+  const auto it = line.values.find(key);
+  if (it == line.values.end()) {
+    return default_value;
+  }
+  bool parsed = false;
+  if (!ParseBool(it->second, &parsed)) {
+    std::ostringstream message;
+    message << "line " << line.line_number << " has invalid boolean for "
+            << key;
+    throw std::runtime_error(message.str());
+  }
+  return parsed;
 }
 
 MosaicSessionId RequiredSessionId(const PlanLine& line,
@@ -477,6 +505,12 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.device_index = OptionalInt(line, "device", options.device_index);
     options.threads = OptionalInt(line, "threads", options.threads);
     options.sequence_id = OptionalInt(line, "seq_id", options.sequence_id);
+    options.use_mmap = OptionalBool(line, "use_mmap", options.use_mmap);
+    options.use_mlock = OptionalBool(line, "use_mlock", options.use_mlock);
+    options.use_direct_io =
+        OptionalBool(line, "use_direct_io", options.use_direct_io);
+    options.check_tensors =
+        OptionalBool(line, "check_tensors", options.check_tensors);
     return std::make_unique<LlamaResidencyAdapter>(std::move(options));
   }
 #endif  // MOSAICVRAM_ENABLE_LLAMA
@@ -642,6 +676,16 @@ void PrintAdapterReport(MosaicSessionId session_id,
     const double saved_replay_ms = cold_replay_ms - warm_return_ms;
     std::cout << "session" << session_id
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
+              << "session" << session_id
+              << "_use_mmap=" << BoolText(adapter->options().use_mmap) << "\n"
+              << "session" << session_id
+              << "_use_mlock=" << BoolText(adapter->options().use_mlock) << "\n"
+              << "session" << session_id
+              << "_use_direct_io=" << BoolText(adapter->options().use_direct_io)
+              << "\n"
+              << "session" << session_id
+              << "_check_tensors=" << BoolText(adapter->options().check_tensors)
+              << "\n"
               << "session" << session_id
               << "_full_state_bytes=" << report.full_state_bytes << "\n"
               << "session" << session_id

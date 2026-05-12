@@ -25,6 +25,10 @@ struct LlamaResidencyOptions {
   int device_index = 0;
   int threads = 8;
   llama_seq_id sequence_id = 0;
+  bool use_mmap = true;
+  bool use_mlock = false;
+  bool use_direct_io = false;
+  bool check_tensors = false;
 };
 
 struct LlamaResidencyReport {

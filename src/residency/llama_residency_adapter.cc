@@ -348,6 +348,10 @@ LlamaResidencyAdapter::ModelPtr LlamaResidencyAdapter::LoadModel() const {
   llama_model_params model_params = llama_model_default_params();
   model_params.n_gpu_layers = options_.gpu_layers;
   model_params.main_gpu = options_.device_index;
+  model_params.use_mmap = options_.use_mmap;
+  model_params.use_mlock = options_.use_mlock;
+  model_params.use_direct_io = options_.use_direct_io;
+  model_params.check_tensors = options_.check_tensors;
 
   ModelPtr model(
       llama_model_load_from_file(options_.model_path.c_str(), model_params));

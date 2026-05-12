@@ -8,6 +8,10 @@ if "%THREADS%"=="" set "THREADS=8"
 if "%LLAMA_CTX%"=="" set "LLAMA_CTX=16384"
 if "%LLAMA_BATCH%"=="" set "LLAMA_BATCH=512"
 if "%LLAMA_GPU_LAYERS%"=="" set "LLAMA_GPU_LAYERS=-1"
+if "%LLAMA_USE_MMAP%"=="" set "LLAMA_USE_MMAP=true"
+if "%LLAMA_USE_MLOCK%"=="" set "LLAMA_USE_MLOCK=false"
+if "%LLAMA_USE_DIRECT_IO%"=="" set "LLAMA_USE_DIRECT_IO=false"
+if "%LLAMA_CHECK_TENSORS%"=="" set "LLAMA_CHECK_TENSORS=false"
 if "%ONNX_PREFILL_CHUNK%"=="" set "ONNX_PREFILL_CHUNK=512"
 
 if "%1"=="" (
@@ -58,6 +62,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$text = $text.Replace('{{LLAMA_CTX}}', '%LLAMA_CTX%'); " ^
   "$text = $text.Replace('{{LLAMA_BATCH}}', '%LLAMA_BATCH%'); " ^
   "$text = $text.Replace('{{LLAMA_GPU_LAYERS}}', '%LLAMA_GPU_LAYERS%'); " ^
+  "$text = $text.Replace('{{LLAMA_USE_MMAP}}', '%LLAMA_USE_MMAP%'); " ^
+  "$text = $text.Replace('{{LLAMA_USE_MLOCK}}', '%LLAMA_USE_MLOCK%'); " ^
+  "$text = $text.Replace('{{LLAMA_USE_DIRECT_IO}}', '%LLAMA_USE_DIRECT_IO%'); " ^
+  "$text = $text.Replace('{{LLAMA_CHECK_TENSORS}}', '%LLAMA_CHECK_TENSORS%'); " ^
   "$text = $text.Replace('{{ONNX_MODEL}}', '%ONNX_MODEL%'); " ^
   "$text = $text.Replace('{{ONNX_TOKENIZER}}', '%ONNX_TOKENIZER%'); " ^
   "$text = $text.Replace('{{ONNX_PREFILL_CHUNK}}', '%ONNX_PREFILL_CHUNK%'); " ^
