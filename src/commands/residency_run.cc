@@ -241,8 +241,8 @@ std::vector<int64_t> ReadTokenListFile(const std::string& path,
   std::ifstream file(path);
   if (!file) {
     std::ostringstream message;
-    message << "line " << line_number << " could not open tokens_file: "
-            << path;
+    message << "line " << line_number
+            << " could not open tokens_file: " << path;
     throw std::runtime_error(message.str());
   }
   std::ostringstream text;
