@@ -635,6 +635,11 @@ void PrintAdapterReport(MosaicSessionId session_id,
       return;
     }
     const LlamaResidencyReport& report = adapter->report();
+    const double warm_return_ms =
+        report.model_reload_ms + report.restore_state_ms;
+    const double cold_replay_ms =
+        report.initial_model_load_ms + report.prefill_ms;
+    const double saved_replay_ms = cold_replay_ms - warm_return_ms;
     std::cout << "session" << session_id
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
               << "session" << session_id
@@ -662,6 +667,12 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_restore_state_ms=" << report.restore_state_ms << "\n"
               << "session" << session_id
               << "_resume_check_ms=" << report.resume_check_ms << "\n"
+              << "session" << session_id << "_warm_return_ms=" << warm_return_ms
+              << "\n"
+              << "session" << session_id << "_cold_replay_ms=" << cold_replay_ms
+              << "\n"
+              << "session" << session_id
+              << "_saved_replay_ms=" << saved_replay_ms << "\n"
               << "session" << session_id
               << "_restore_generate_ms=" << report.restore_generate_ms << "\n";
     if (!report.generated_text.empty() || report.generated_tokens > 0) {
@@ -684,6 +695,11 @@ void PrintAdapterReport(MosaicSessionId session_id,
       return;
     }
     const OnnxLlmResidencyReport& report = adapter->report();
+    const double warm_return_ms =
+        report.session_reload_ms + report.restore_state_ms;
+    const double cold_replay_ms =
+        report.initial_session_load_ms + report.prefill_ms;
+    const double saved_replay_ms = cold_replay_ms - warm_return_ms;
     std::cout << "session" << session_id
               << "_prompt_tokens=" << report.prompt_tokens << "\n"
               << "session" << session_id
@@ -734,6 +750,12 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_restore_state_ms=" << report.restore_state_ms << "\n"
               << "session" << session_id
               << "_resume_check_ms=" << report.resume_check_ms << "\n"
+              << "session" << session_id << "_warm_return_ms=" << warm_return_ms
+              << "\n"
+              << "session" << session_id << "_cold_replay_ms=" << cold_replay_ms
+              << "\n"
+              << "session" << session_id
+              << "_saved_replay_ms=" << saved_replay_ms << "\n"
               << "session" << session_id
               << "_restore_generate_ms=" << report.restore_generate_ms << "\n";
     if (!report.generated_token_ids.empty() || report.generated_tokens > 0) {

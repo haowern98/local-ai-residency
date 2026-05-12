@@ -213,6 +213,19 @@ Python and Hugging Face Transformers are not used at runtime.
 `tokens_file=` remains available as an advanced pre-tokenized path. Inline
 `tokens=` is not accepted for ONNX session prompts.
 
+## Reload Metrics
+
+`residency-run` reports derived timing fields for each session:
+
+```text
+warm_return_ms = model/session reload + saved-state restore
+cold_replay_ms = initial model/session load + prompt prefill
+saved_replay_ms = cold_replay_ms - warm_return_ms
+```
+
+For llama.cpp, `warm_return_ms` uses `model_reload_ms + restore_state_ms`. For
+ONNX LLMs, it uses `session_reload_ms + restore_state_ms`.
+
 ## Validation Results
 
 Mixed llama.cpp -> ONNX -> llama.cpp handoff:

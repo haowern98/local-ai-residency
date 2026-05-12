@@ -177,11 +177,19 @@ sessionN_evict_model_ms
 sessionN_model_reload_ms
 sessionN_session_reload_ms
 sessionN_restore_state_ms
+sessionN_warm_return_ms
+sessionN_cold_replay_ms
+sessionN_saved_replay_ms
 sessionN_resume_check_ms
 sessionN_baseline_next_token
 sessionN_restored_next_token
 sessionN_resume_match
 ```
+
+`warm_return_ms` is the time to return after eviction by reloading model/session
+residency and restoring saved state. `cold_replay_ms` is the initial load plus
+full prompt prefill. `saved_replay_ms` is the estimated prefill time avoided by
+restoring saved state instead of replaying from the beginning.
 
 For ONNX LLMs, compatibility diagnostics are also reported:
 
