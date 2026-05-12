@@ -21,12 +21,20 @@ tests/
   run_gpu_smoke.bat
 ```
 
-Generated plans and token files are written to `tests/generated/`. That
-directory is ignored by Git.
+Generated plans are written to `tests/generated/`. That directory is ignored by
+Git.
 
 ## Requirements
 
 Build Local AI Residency with both llama.cpp and ONNX Runtime support:
+
+The `tokenizer.json` path uses `tokenizers-cpp`, so Rust/Cargo must be
+available on `PATH`.
+
+```text
+git clone https://github.com/mlc-ai/tokenizers-cpp.git deps\tokenizers-cpp
+git -C deps\tokenizers-cpp submodule update --init --recursive
+```
 
 ```text
 cmake -S . -B build-llama-onnx -G Ninja ^
@@ -34,7 +42,9 @@ cmake -S . -B build-llama-onnx -G Ninja ^
   -DMOSAICVRAM_LLAMA_DIR=..\llama.cpp ^
   -DMOSAICVRAM_LLAMA_BUILD_DIR=..\llama.cpp\build-cuda ^
   -DMOSAICVRAM_ENABLE_ONNX=ON ^
-  -DMOSAICVRAM_ONNXRUNTIME_DIR=deps\onnxruntime-win-x64-gpu-1.25.1
+  -DMOSAICVRAM_ONNXRUNTIME_DIR=deps\onnxruntime-win-x64-gpu-1.25.1 ^
+  -DMOSAICVRAM_ENABLE_TOKENIZER_JSON=ON ^
+  -DMOSAICVRAM_TOKENIZERS_CPP_DIR=deps\tokenizers-cpp
 cmake --build build-llama-onnx
 ```
 
@@ -95,18 +105,26 @@ so ONNX can be restored and checked too.
 
 ## ONNX Tokenization
 
-ONNX Runtime does not provide a tokenizer. The smoke script uses
-`tests/scripts/make_onnx_tokens.py` to tokenize `15k_prompt.txt` with the
-model-specific Hugging Face tokenizer directory supplied by `ONNX_TOKENIZER`.
+ONNX Runtime does not provide a tokenizer. The smoke plans pass
+`tokenizer=<path>` and `prompt_file=<path>` to `residency-run`. MosaicVRAM then
+loads the model-specific Hugging Face `tokenizer.json` supplied by
+`ONNX_TOKENIZER` and converts the prompt text into token IDs inside the C++
+process.
 
 The same prompt can produce different token counts for different models. For
 example, a prompt that is 15,000 tokens for one tokenizer may be more or fewer
 tokens for another tokenizer.
 
-The generated token file is passed into the ONNX plan with:
+For advanced diagnostics, ONNX sessions can still accept a pre-tokenized file:
 
 ```text
 tokens_file=tests\generated\onnx_tokens.txt
+```
+
+That path is not the normal user flow. The normal ONNX flow is:
+
+```text
+prompt text -> native tokenizer.json adapter -> token IDs -> ONNX Runtime tensors
 ```
 
 ## Restore Correctness

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tokenizes a text fixture for an ONNX LLM residency plan.
+"""Tokenizes a text fixture for ONNX LLM tokenizer diagnostics.
 
-This helper is intentionally outside the C++ runtime. ONNX Runtime does not
-standardize tokenization, so users should supply the tokenizer matching their
-model export.
+The normal runtime path uses MosaicVRAM's native tokenizer.json adapter. This
+helper is test-only and can be used to compare native output with Hugging Face
+Transformers output.
 """
 
 from __future__ import annotations

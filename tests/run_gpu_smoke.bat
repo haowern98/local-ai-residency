@@ -46,26 +46,20 @@ if "%ONNX_TOKENIZER%"=="" (
 )
 exit /b 0
 
-:make_tokens
-set "ONNX_TOKENS_FILE=%GENERATED_DIR%\onnx_tokens.txt"
-python tests\scripts\make_onnx_tokens.py --tokenizer "%ONNX_TOKENIZER%" --input "%PROMPT_FILE%" --output "%ONNX_TOKENS_FILE%"
-if errorlevel 1 exit /b 1
-exit /b 0
-
 :render_plan
 set "TEMPLATE=%~1"
 set "PLAN=%~2"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$text = Get-Content -LiteralPath '%TEMPLATE%' -Raw; " ^
   "$prompt = Get-Content -LiteralPath '%PROMPT_FILE%' -Raw; " ^
-  "$tokensPath = '%ONNX_TOKENS_FILE%'; " ^
   "$text = $text.Replace('{{PROMPT_TEXT}}', $prompt.Trim()); " ^
+  "$text = $text.Replace('{{PROMPT_FILE}}', '%PROMPT_FILE%'); " ^
   "$text = $text.Replace('{{LLAMA_MODEL}}', '%LLAMA_MODEL%'); " ^
   "$text = $text.Replace('{{LLAMA_CTX}}', '%LLAMA_CTX%'); " ^
   "$text = $text.Replace('{{LLAMA_BATCH}}', '%LLAMA_BATCH%'); " ^
   "$text = $text.Replace('{{LLAMA_GPU_LAYERS}}', '%LLAMA_GPU_LAYERS%'); " ^
   "$text = $text.Replace('{{ONNX_MODEL}}', '%ONNX_MODEL%'); " ^
-  "$text = $text.Replace('{{ONNX_TOKENS_FILE}}', $tokensPath); " ^
+  "$text = $text.Replace('{{ONNX_TOKENIZER}}', '%ONNX_TOKENIZER%'); " ^
   "$text = $text.Replace('{{ONNX_PREFILL_CHUNK}}', '%ONNX_PREFILL_CHUNK%'); " ^
   "$text = $text.Replace('{{DEVICE}}', '%DEVICE%'); " ^
   "$text = $text.Replace('{{THREADS}}', '%THREADS%'); " ^
@@ -85,8 +79,6 @@ exit /b %ERRORLEVEL%
 :onnx
 call :check_onnx
 if errorlevel 1 exit /b 1
-call :make_tokens
-if errorlevel 1 exit /b 1
 set "PLAN=%GENERATED_DIR%\onnx_long_context.plan"
 call :render_plan tests\plans\templates\onnx_long_context.plan "%PLAN%"
 if errorlevel 1 exit /b 1
@@ -97,8 +89,6 @@ exit /b %ERRORLEVEL%
 call :check_llama
 if errorlevel 1 exit /b 1
 call :check_onnx
-if errorlevel 1 exit /b 1
-call :make_tokens
 if errorlevel 1 exit /b 1
 set "PLAN=%GENERATED_DIR%\mixed_backend.plan"
 call :render_plan tests\plans\templates\mixed_backend.plan "%PLAN%"

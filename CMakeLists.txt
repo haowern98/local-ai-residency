@@ -9,6 +9,8 @@ find_package(CUDAToolkit REQUIRED)
 
 option(MOSAICVRAM_ENABLE_ONNX "Enable ONNX Runtime backend" OFF)
 option(MOSAICVRAM_ENABLE_LLAMA "Enable llama.cpp warm-state command" OFF)
+option(MOSAICVRAM_ENABLE_TOKENIZER_JSON
+       "Enable native Hugging Face tokenizer.json support" OFF)
 set(MOSAICVRAM_ONNXRUNTIME_DIR
     ""
     CACHE PATH "Path to extracted ONNX Runtime package")
@@ -18,6 +20,9 @@ set(MOSAICVRAM_LLAMA_DIR
 set(MOSAICVRAM_LLAMA_BUILD_DIR
     ""
     CACHE PATH "Path to llama.cpp build directory")
+set(MOSAICVRAM_TOKENIZERS_CPP_DIR
+    ""
+    CACHE PATH "Path to tokenizers-cpp source directory")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,6 +62,30 @@ if(MOSAICVRAM_ENABLE_ONNX)
                              PRIVATE "${MOSAICVRAM_ONNXRUNTIME_DIR}/include")
   target_link_directories(mosaicvram PRIVATE "${MOSAICVRAM_ONNXRUNTIME_DIR}/lib")
   target_link_libraries(mosaicvram PRIVATE onnxruntime)
+endif()
+
+if(MOSAICVRAM_ENABLE_TOKENIZER_JSON)
+  if(NOT MOSAICVRAM_ENABLE_ONNX)
+    message(FATAL_ERROR "MOSAICVRAM_ENABLE_ONNX is required for tokenizer.json support")
+  endif()
+  if(NOT MOSAICVRAM_TOKENIZERS_CPP_DIR)
+    message(FATAL_ERROR "MOSAICVRAM_TOKENIZERS_CPP_DIR is required when tokenizer.json support is enabled")
+  endif()
+
+  set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER
+      OFF
+      CACHE BOOL "Disable SentencePiece for MosaicVRAM tokenizer.json phase")
+  if(MSVC)
+    set(TOKENIZERS_CPP_MSVC_RUNTIME_LIBRARY
+        "MD"
+        CACHE STRING "Match MosaicVRAM MSVC runtime")
+  endif()
+  add_subdirectory("${MOSAICVRAM_TOKENIZERS_CPP_DIR}" tokenizers-cpp
+                   EXCLUDE_FROM_ALL)
+  target_sources(mosaicvram PRIVATE src/tokenizer/tokenizers_cpp_adapter.cc)
+  target_compile_definitions(mosaicvram
+                             PRIVATE MOSAICVRAM_ENABLE_TOKENIZER_JSON)
+  target_link_libraries(mosaicvram PRIVATE tokenizers_cpp)
 endif()
 
 if(MOSAICVRAM_ENABLE_LLAMA)
