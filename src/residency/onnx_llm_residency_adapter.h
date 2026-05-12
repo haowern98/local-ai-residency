@@ -22,6 +22,11 @@ struct OnnxLlmResidencyOptions {
   int prefill_chunk_tokens = 512;
   int device_index = 0;
   std::size_t max_snapshot_bytes = 0;
+  std::string graph_optimization = "extended";
+  bool disable_cpu_mem_arena = false;
+  bool disable_mem_pattern = false;
+  std::string optimized_model_path;
+  bool use_prepacked_weights = false;
 };
 
 struct OnnxLlmResidencyReport {
@@ -56,6 +61,11 @@ struct OnnxLlmResidencyReport {
   double resume_check_ms = 0.0;
   double restore_generate_ms = 0.0;
   std::size_t max_snapshot_bytes = 0;
+  std::string graph_optimization;
+  bool disable_cpu_mem_arena = false;
+  bool disable_mem_pattern = false;
+  bool optimized_model_path_present = false;
+  bool use_prepacked_weights = false;
   bool position_ids_present = false;
   bool decode_valid = false;
   bool cache_surface_found = false;
@@ -137,6 +147,7 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   std::unique_ptr<Ort::Env> env_;
   std::unique_ptr<Ort::SessionOptions> session_options_;
   std::unique_ptr<Ort::Session> session_;
+  std::unique_ptr<Ort::PrepackedWeightsContainer> prepacked_weights_;
   std::string input_ids_name_;
   std::string attention_mask_name_;
   std::string position_ids_name_;

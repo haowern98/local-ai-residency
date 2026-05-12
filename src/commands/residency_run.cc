@@ -553,6 +553,16 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.device_index = OptionalInt(line, "device", options.device_index);
     options.max_snapshot_bytes = OptionalBytesFromMiB(
         line, "max_snapshot_mb", options.max_snapshot_bytes);
+    options.graph_optimization =
+        OptionalString(line, "graph_optimization", options.graph_optimization);
+    options.disable_cpu_mem_arena = OptionalBool(line, "disable_cpu_mem_arena",
+                                                 options.disable_cpu_mem_arena);
+    options.disable_mem_pattern =
+        OptionalBool(line, "disable_mem_pattern", options.disable_mem_pattern);
+    options.optimized_model_path = OptionalString(line, "optimized_model_path",
+                                                  options.optimized_model_path);
+    options.use_prepacked_weights = OptionalBool(line, "use_prepacked_weights",
+                                                 options.use_prepacked_weights);
     return std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
@@ -783,6 +793,17 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_prefill_chunks=" << report.prefill_chunks << "\n"
               << "session" << session_id
               << "_prefill_chunk_tokens=" << report.prefill_chunk_tokens << "\n"
+              << "session" << session_id
+              << "_graph_optimization=" << report.graph_optimization << "\n"
+              << "session" << session_id << "_disable_cpu_mem_arena="
+              << BoolText(report.disable_cpu_mem_arena) << "\n"
+              << "session" << session_id
+              << "_disable_mem_pattern=" << BoolText(report.disable_mem_pattern)
+              << "\n"
+              << "session" << session_id << "_optimized_model_path_present="
+              << BoolText(report.optimized_model_path_present) << "\n"
+              << "session" << session_id << "_use_prepacked_weights="
+              << BoolText(report.use_prepacked_weights) << "\n"
               << "session" << session_id
               << "_logits_dtype=" << report.logits_dtype << "\n"
               << "session" << session_id

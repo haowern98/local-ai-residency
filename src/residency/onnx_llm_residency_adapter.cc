@@ -35,6 +35,23 @@ void CheckSnapshotBudget(std::size_t snapshot_bytes,
   throw std::runtime_error("ONNX LLM snapshot exceeds max_snapshot_mb");
 }
 
+GraphOptimizationLevel ParseGraphOptimization(const std::string& value) {
+  if (value == "disable") {
+    return GraphOptimizationLevel::ORT_DISABLE_ALL;
+  }
+  if (value == "basic") {
+    return GraphOptimizationLevel::ORT_ENABLE_BASIC;
+  }
+  if (value == "extended") {
+    return GraphOptimizationLevel::ORT_ENABLE_EXTENDED;
+  }
+  if (value == "all") {
+    return GraphOptimizationLevel::ORT_ENABLE_ALL;
+  }
+  throw std::runtime_error(
+      "graph_optimization must be disable, basic, extended, or all");
+}
+
 std::wstring ToWideString(const std::string& text) {
   return std::wstring(text.begin(), text.end());
 }
@@ -411,14 +428,38 @@ void OnnxLlmResidencyAdapter::CreateSession(double* elapsed_ms) {
                                     "mosaicvram-onnx-llm");
   session_options_ = std::make_unique<Ort::SessionOptions>();
   session_options_->SetGraphOptimizationLevel(
-      GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+      ParseGraphOptimization(options_.graph_optimization));
+  if (options_.disable_cpu_mem_arena) {
+    session_options_->DisableCpuMemArena();
+  }
+  if (options_.disable_mem_pattern) {
+    session_options_->DisableMemPattern();
+  }
+  if (!options_.optimized_model_path.empty()) {
+    const std::wstring optimized_model_path =
+        ToWideString(options_.optimized_model_path);
+    session_options_->SetOptimizedModelFilePath(optimized_model_path.c_str());
+  }
   OrtCUDAProviderOptions cuda_options;
   cuda_options.device_id = options_.device_index;
   session_options_->AppendExecutionProvider_CUDA(cuda_options);
 
   const std::wstring model_path = ToWideString(options_.model_path);
-  session_ = std::make_unique<Ort::Session>(*env_, model_path.c_str(),
-                                            *session_options_);
+  if (options_.use_prepacked_weights) {
+    if (prepacked_weights_ == nullptr) {
+      prepacked_weights_ = std::make_unique<Ort::PrepackedWeightsContainer>();
+    }
+    session_ = std::make_unique<Ort::Session>(
+        *env_, model_path.c_str(), *session_options_, *prepacked_weights_);
+  } else {
+    session_ = std::make_unique<Ort::Session>(*env_, model_path.c_str(),
+                                              *session_options_);
+  }
+  report_.graph_optimization = options_.graph_optimization;
+  report_.disable_cpu_mem_arena = options_.disable_cpu_mem_arena;
+  report_.disable_mem_pattern = options_.disable_mem_pattern;
+  report_.optimized_model_path_present = !options_.optimized_model_path.empty();
+  report_.use_prepacked_weights = options_.use_prepacked_weights;
   *elapsed_ms = timer.ElapsedMs();
 }
 
