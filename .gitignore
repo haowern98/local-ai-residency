@@ -6,6 +6,8 @@ PROJECT_NOTES.md
 results/*.json
 results/*.txt
 *.plan
+!tests/plans/templates/*.plan
+tests/generated/
 *.onnx
 *.gguf
 *.ggml

@@ -1,0 +1,11 @@
+session id=1 backend=onnx-llm model="{{ONNX_MODEL}}" tokens_file="{{ONNX_TOKENS_FILE}}" prefill_chunk={{ONNX_PREFILL_CHUNK}} device={{DEVICE}}
+
+step op=load session=1
+step op=prefill session=1
+step op=save session=1
+step op=baseline session=1
+step op=evict_context session=1
+step op=evict_model session=1
+step op=reload_model session=1
+step op=restore session=1
+step op=resume_check session=1

@@ -1,0 +1,11 @@
+session id=1 backend=llama model="{{LLAMA_MODEL}}" prompt="{{PROMPT_TEXT}}" ctx={{LLAMA_CTX}} batch={{LLAMA_BATCH}} gpu_layers={{LLAMA_GPU_LAYERS}} device={{DEVICE}} threads={{THREADS}}
+
+step op=load session=1
+step op=prefill session=1
+step op=save session=1
+step op=baseline session=1
+step op=evict_context session=1
+step op=evict_model session=1
+step op=reload_model session=1
+step op=restore session=1
+step op=resume_check session=1

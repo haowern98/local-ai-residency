@@ -202,20 +202,31 @@ std::vector<int64_t> ParseTokenList(const std::string& text, int line_number) {
   std::vector<int64_t> tokens;
   std::string_view rest = text;
   while (!rest.empty()) {
-    const std::size_t comma_pos = rest.find(',');
-    const std::string_view item =
-        comma_pos == std::string_view::npos ? rest : rest.substr(0, comma_pos);
+    std::size_t delimiter_pos = rest.find(',');
+    for (std::size_t i = 0; i < rest.size(); ++i) {
+      if (std::isspace(static_cast<unsigned char>(rest[i])) &&
+          (delimiter_pos == std::string_view::npos || i < delimiter_pos)) {
+        delimiter_pos = i;
+      }
+    }
+    const std::string_view item = delimiter_pos == std::string_view::npos
+                                      ? rest
+                                      : rest.substr(0, delimiter_pos);
     int64_t token = 0;
-    if (!ParseInt64(item, &token) || token < 0) {
+    const std::string trimmed_item = Trim(item);
+    if (!trimmed_item.empty() &&
+        (!ParseInt64(trimmed_item, &token) || token < 0)) {
       std::ostringstream message;
       message << "line " << line_number << " has invalid token list";
       throw std::runtime_error(message.str());
     }
-    tokens.push_back(token);
-    if (comma_pos == std::string_view::npos) {
+    if (!trimmed_item.empty()) {
+      tokens.push_back(token);
+    }
+    if (delimiter_pos == std::string_view::npos) {
       break;
     }
-    rest = rest.substr(comma_pos + 1);
+    rest = rest.substr(delimiter_pos + 1);
   }
   if (tokens.empty()) {
     std::ostringstream message;
@@ -223,6 +234,41 @@ std::vector<int64_t> ParseTokenList(const std::string& text, int line_number) {
     throw std::runtime_error(message.str());
   }
   return tokens;
+}
+
+std::vector<int64_t> ReadTokenListFile(const std::string& path,
+                                       int line_number) {
+  std::ifstream file(path);
+  if (!file) {
+    std::ostringstream message;
+    message << "line " << line_number << " could not open tokens_file: "
+            << path;
+    throw std::runtime_error(message.str());
+  }
+  std::ostringstream text;
+  text << file.rdbuf();
+  return ParseTokenList(text.str(), line_number);
+}
+
+std::vector<int64_t> RequiredTokenList(const PlanLine& line) {
+  const auto tokens = line.values.find("tokens");
+  const auto tokens_file = line.values.find("tokens_file");
+  if (tokens != line.values.end() && tokens_file != line.values.end()) {
+    std::ostringstream message;
+    message << "line " << line.line_number
+            << " must use either tokens or tokens_file, not both";
+    throw std::runtime_error(message.str());
+  }
+  if (tokens_file != line.values.end()) {
+    return ReadTokenListFile(tokens_file->second, line.line_number);
+  }
+  if (tokens != line.values.end()) {
+    return ParseTokenList(tokens->second, line.line_number);
+  }
+  std::ostringstream message;
+  message << "line " << line.line_number
+          << " missing required key: tokens or tokens_file";
+  throw std::runtime_error(message.str());
 }
 
 std::vector<int64_t> OptionalTokenList(const PlanLine& line,
@@ -330,8 +376,7 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     OnnxLlmResidencyOptions options;
     options.session_id = session_id;
     options.model_path = RequiredValue(line, "model");
-    options.prompt_tokens =
-        ParseTokenList(RequiredValue(line, "tokens"), line.line_number);
+    options.prompt_tokens = RequiredTokenList(line);
     options.prefill_chunk_tokens =
         OptionalInt(line, "prefill_chunk", options.prefill_chunk_tokens);
     options.device_index = OptionalInt(line, "device", options.device_index);
