@@ -98,6 +98,28 @@ cmake -S . -B build-llama-onnx -G Ninja ^
 cmake --build build-llama-onnx
 ```
 
+Build with ONNX LLM text prompts from `tokenizer.json`:
+
+This path links `tokenizers-cpp` into `mosaicvram.exe`. Rust/Cargo must be
+available on `PATH` while building, but they are not runtime requirements.
+
+```text
+git clone https://github.com/mlc-ai/tokenizers-cpp.git deps\tokenizers-cpp
+git -C deps\tokenizers-cpp submodule update --init --recursive
+```
+
+```text
+cmake -S . -B build-llama-onnx -G Ninja ^
+  -DMOSAICVRAM_ENABLE_LLAMA=ON ^
+  -DMOSAICVRAM_LLAMA_DIR=..\llama.cpp ^
+  -DMOSAICVRAM_LLAMA_BUILD_DIR=..\llama.cpp\build-cuda ^
+  -DMOSAICVRAM_ENABLE_ONNX=ON ^
+  -DMOSAICVRAM_ONNXRUNTIME_DIR=deps\onnxruntime-win-x64-gpu-1.25.1 ^
+  -DMOSAICVRAM_ENABLE_TOKENIZER_JSON=ON ^
+  -DMOSAICVRAM_TOKENIZERS_CPP_DIR=deps\tokenizers-cpp
+cmake --build build-llama-onnx
+```
+
 ONNX Runtime GPU requires the ONNX Runtime `lib` directory and CUDA/cuDNN DLLs
 on `PATH`.
 
@@ -113,7 +135,7 @@ A plan declares sessions and then executes lifecycle steps:
 
 ```text
 session id=1 backend=llama model="models\qwen.gguf" prompt="My name is xjghft. Remember this." ctx=512 batch=512 gpu_layers=-1 device=0
-session id=2 backend=onnx-llm model="models\qwen3.onnx" tokens=151644,872,198,9707,151645,198 prefill_chunk=512 device=0
+session id=2 backend=onnx-llm model="models\qwen3.onnx" tokenizer="models\qwen3" prompt="My name is xjghft. Remember this." prefill_chunk=512 device=0
 
 step op=load session=1
 step op=prefill session=1
@@ -161,11 +183,11 @@ For llama.cpp sessions, `restore_then_generate` accepts text:
 step op=restore_then_generate session=1 text=" What is my name?" max_tokens=32 expect="xjghft"
 ```
 
-For ONNX LLM sessions, `restore_then_generate` accepts token IDs because ONNX
-Runtime does not provide model tokenization:
+For ONNX LLM sessions, `restore_then_generate` accepts text when the session was
+created with `tokenizer=`:
 
 ```text
-step op=restore_then_generate session=2 tokens=3555,374,847,829,30 max_tokens=32 expect_tokens=73,866,723
+step op=restore_then_generate session=2 text=" What is my name?" max_tokens=32
 ```
 
 The `expect` and `expect_tokens` fields are optional. They are useful for
@@ -176,6 +198,20 @@ ONNX LLM sessions accept `prefill_chunk=<tokens>` to process long prompts as
 repeated `[1, chunk_len]` ONNX Runtime calls while carrying the KV cache forward.
 This mirrors ONNX's tensor-shaped execution model instead of submitting one
 large prompt tensor.
+
+ONNX LLM sessions can accept `prompt=` or `prompt_file=` when the model folder
+provides a Hugging Face `tokenizer.json`:
+
+```text
+session id=2 backend=onnx-llm model="models\qwen3.onnx" tokenizer="models\qwen3" prompt_file="prompts\long.txt" prefill_chunk=512 device=0
+```
+
+The `tokenizer=` value can point either to `tokenizer.json` itself or to a
+directory containing `tokenizer.json`. Tokenization runs inside the C++ process;
+Python and Hugging Face Transformers are not used at runtime.
+
+`tokens_file=` remains available as an advanced pre-tokenized path. Inline
+`tokens=` is not accepted for ONNX session prompts.
 
 ## Validation Results
 
@@ -245,8 +281,12 @@ Dynamic tensor shapes can be provided with:
 
 ## Limitations
 
-- ONNX LLM text tokenization is outside the runtime. Users must provide token
-  IDs unless a future tokenizer adapter is configured.
+- ONNX LLM text tokenization currently supports Hugging Face `tokenizer.json`
+  files when `MOSAICVRAM_ENABLE_TOKENIZER_JSON=ON` is enabled at build time.
+- SentencePiece `.model` tokenizers are not supported yet.
+- `tokenizer_config.json` without a `tokenizer.json` file is not enough.
+- Python tokenizers and custom Hugging Face tokenizer code are not used at
+  runtime.
 - ONNX LLM support requires explicit KV-cache inputs and outputs.
 - Provider-specific custom ops are not portable unless the required provider is
   available at runtime.

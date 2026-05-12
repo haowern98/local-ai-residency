@@ -3,8 +3,7 @@ third_party/
 models/
 deps/
 PROJECT_NOTES.md
-results/*.json
-results/*.txt
+/results/
 *.plan
 !tests/plans/templates/*.plan
 tests/generated/

@@ -21,12 +21,21 @@ tests/
   run_gpu_smoke.bat
 ```
 
-Generated plans and token files are written to `tests/generated/`. That
-directory is ignored by Git.
+Generated plans are written to `tests/generated/`. That directory is ignored by
+Git.
 
 ## Requirements
 
 Build Local AI Residency with both llama.cpp and ONNX Runtime support:
+
+The `tokenizer.json` path links `tokenizers-cpp` into `mosaicvram.exe`.
+Rust/Cargo must be available on `PATH` while building, but they are not runtime
+requirements.
+
+```text
+git clone https://github.com/mlc-ai/tokenizers-cpp.git deps\tokenizers-cpp
+git -C deps\tokenizers-cpp submodule update --init --recursive
+```
 
 ```text
 cmake -S . -B build-llama-onnx -G Ninja ^
@@ -34,7 +43,9 @@ cmake -S . -B build-llama-onnx -G Ninja ^
   -DMOSAICVRAM_LLAMA_DIR=..\llama.cpp ^
   -DMOSAICVRAM_LLAMA_BUILD_DIR=..\llama.cpp\build-cuda ^
   -DMOSAICVRAM_ENABLE_ONNX=ON ^
-  -DMOSAICVRAM_ONNXRUNTIME_DIR=deps\onnxruntime-win-x64-gpu-1.25.1
+  -DMOSAICVRAM_ONNXRUNTIME_DIR=deps\onnxruntime-win-x64-gpu-1.25.1 ^
+  -DMOSAICVRAM_ENABLE_TOKENIZER_JSON=ON ^
+  -DMOSAICVRAM_TOKENIZERS_CPP_DIR=deps\tokenizers-cpp
 cmake --build build-llama-onnx
 ```
 
@@ -51,7 +62,7 @@ cd "<repo>\mosaicvram"
 
 $env:LLAMA_MODEL = "<path>\model.gguf"
 $env:ONNX_MODEL = "<path>\model.onnx"
-$env:ONNX_TOKENIZER = "<path>\tokenizer_directory"
+$env:ONNX_TOKENIZER = "<path>\tokenizer_directory_with_tokenizer_json"
 
 $env:PATH = "<path>\llama.cpp\build-cuda\bin;<path>\onnxruntime\lib;<path>\CUDA\bin;<path>\torch\lib;$env:PATH"
 ```
@@ -95,19 +106,35 @@ so ONNX can be restored and checked too.
 
 ## ONNX Tokenization
 
-ONNX Runtime does not provide a tokenizer. The smoke script uses
-`tests/scripts/make_onnx_tokens.py` to tokenize `15k_prompt.txt` with the
-model-specific Hugging Face tokenizer directory supplied by `ONNX_TOKENIZER`.
+ONNX Runtime does not provide a tokenizer. The smoke plans pass
+`tokenizer=<path>` and `prompt_file=<path>` to `residency-run`. MosaicVRAM then
+loads the model-specific Hugging Face `tokenizer.json` supplied by
+`ONNX_TOKENIZER` and converts the prompt text into token IDs inside the C++
+process.
+
+`ONNX_TOKENIZER` must point to `tokenizer.json` or to a directory containing
+`tokenizer.json`. The smoke script does not call Python or Hugging Face
+Transformers for normal runs.
 
 The same prompt can produce different token counts for different models. For
 example, a prompt that is 15,000 tokens for one tokenizer may be more or fewer
 tokens for another tokenizer.
 
-The generated token file is passed into the ONNX plan with:
+For advanced diagnostics, ONNX sessions can still accept a pre-tokenized file:
 
 ```text
 tokens_file=tests\generated\onnx_tokens.txt
 ```
+
+That path is not the normal user flow. The normal ONNX flow is:
+
+```text
+prompt text -> native tokenizer.json adapter -> token IDs -> ONNX Runtime tensors
+```
+
+`tests/scripts/make_onnx_tokens.py` is diagnostic-only. It can compare native
+tokenizer output against Hugging Face Transformers, but `run_gpu_smoke.bat` does
+not use it.
 
 ## Restore Correctness
 

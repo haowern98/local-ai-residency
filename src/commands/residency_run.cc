@@ -24,6 +24,9 @@
 
 #ifdef MOSAICVRAM_ENABLE_ONNX
 #include "residency/onnx_llm_residency_adapter.h"
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+#include "tokenizer/tokenizers_cpp_adapter.h"
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
 #endif  // MOSAICVRAM_ENABLE_ONNX
 
 namespace mosaicvram {
@@ -37,6 +40,7 @@ struct PlanLine {
 
 struct SessionRuntime {
   std::string backend;
+  std::string tokenizer_path;
   std::unique_ptr<BackendStateAdapter> adapter;
 };
 
@@ -250,6 +254,112 @@ std::vector<int64_t> ReadTokenListFile(const std::string& path,
   return ParseTokenList(text.str(), line_number);
 }
 
+#ifdef MOSAICVRAM_ENABLE_ONNX
+std::string ReadRequiredTextFile(const std::string& path, int line_number,
+                                 const std::string& key) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
+    std::ostringstream message;
+    message << "line " << line_number << " could not open " << key << ": "
+            << path;
+    throw std::runtime_error(message.str());
+  }
+  std::ostringstream text;
+  text << file.rdbuf();
+  return text.str();
+}
+
+std::vector<int64_t> TokenizeOnnxPrompt(const PlanLine& line,
+                                        const std::string& prompt) {
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+  return TokenizeWithTokenizerJson(RequiredValue(line, "tokenizer"), prompt);
+#else
+  (void)prompt;
+  std::ostringstream message;
+  message << "line " << line.line_number
+          << " uses tokenizer=, but MosaicVRAM was built without "
+             "tokenizer.json support";
+  throw std::runtime_error(message.str());
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
+}
+
+std::vector<int64_t> RequiredOnnxPromptTokens(const PlanLine& line) {
+  const auto tokens = line.values.find("tokens");
+  const auto tokens_file = line.values.find("tokens_file");
+  const auto prompt = line.values.find("prompt");
+  const auto prompt_file = line.values.find("prompt_file");
+
+  if (tokens != line.values.end()) {
+    std::ostringstream message;
+    message << "line " << line.line_number
+            << " uses inline tokens for an ONNX session; use prompt, "
+               "prompt_file, or tokens_file";
+    throw std::runtime_error(message.str());
+  }
+
+  int source_count = 0;
+  source_count += tokens_file != line.values.end() ? 1 : 0;
+  source_count += prompt != line.values.end() ? 1 : 0;
+  source_count += prompt_file != line.values.end() ? 1 : 0;
+  if (source_count != 1) {
+    std::ostringstream message;
+    message << "line " << line.line_number
+            << " must use exactly one of prompt, prompt_file, or tokens_file";
+    throw std::runtime_error(message.str());
+  }
+
+  if (tokens_file != line.values.end()) {
+    return ReadTokenListFile(tokens_file->second, line.line_number);
+  }
+
+  std::string prompt_text;
+  if (prompt != line.values.end()) {
+    prompt_text = prompt->second;
+  } else {
+    prompt_text = ReadRequiredTextFile(prompt_file->second, line.line_number,
+                                       "prompt_file");
+  }
+  return TokenizeOnnxPrompt(line, prompt_text);
+}
+
+std::vector<int64_t> OnnxContinuationTokens(const PlanLine& line,
+                                            const SessionRuntime& session) {
+  const auto tokens = line.values.find("tokens");
+  const auto text = line.values.find("text");
+  if (tokens != line.values.end() && text != line.values.end()) {
+    std::ostringstream message;
+    message << "line " << line.line_number
+            << " must use either tokens or text, not both";
+    throw std::runtime_error(message.str());
+  }
+  if (tokens != line.values.end()) {
+    return ParseTokenList(tokens->second, line.line_number);
+  }
+  if (text == line.values.end()) {
+    std::ostringstream message;
+    message << "line " << line.line_number
+            << " missing required key for ONNX continuation: text";
+    throw std::runtime_error(message.str());
+  }
+  if (session.tokenizer_path.empty()) {
+    std::ostringstream message;
+    message << "line " << line.line_number
+            << " cannot tokenize ONNX continuation without session tokenizer";
+    throw std::runtime_error(message.str());
+  }
+
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+  return TokenizeWithTokenizerJson(session.tokenizer_path, text->second);
+#else
+  std::ostringstream message;
+  message << "line " << line.line_number
+          << " uses ONNX text continuation, but MosaicVRAM was built without "
+             "tokenizer.json support";
+  throw std::runtime_error(message.str());
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
+}
+#endif  // MOSAICVRAM_ENABLE_ONNX
+
 std::vector<int64_t> RequiredTokenList(const PlanLine& line) {
   const auto tokens = line.values.find("tokens");
   const auto tokens_file = line.values.find("tokens_file");
@@ -376,7 +486,7 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     OnnxLlmResidencyOptions options;
     options.session_id = session_id;
     options.model_path = RequiredValue(line, "model");
-    options.prompt_tokens = RequiredTokenList(line);
+    options.prompt_tokens = RequiredOnnxPromptTokens(line);
     options.prefill_chunk_tokens =
         OptionalInt(line, "prefill_chunk", options.prefill_chunk_tokens);
     options.device_index = OptionalInt(line, "device", options.device_index);
@@ -503,7 +613,7 @@ void RestoreThenGenerate(SessionRuntime* session, const PlanLine& line) {
       throw std::runtime_error("onnx-llm session has invalid adapter");
     }
     adapter->RestoreAndGenerateContinuation(
-        ParseTokenList(RequiredValue(line, "tokens"), line.line_number),
+        OnnxContinuationTokens(line, *session),
         OptionalInt(line, "max_tokens", 32),
         OptionalTokenList(line, "expect_tokens"));
     return;
@@ -675,6 +785,7 @@ int RunPlan(const Options& options) {
     }
     SessionRuntime session;
     session.backend = RequiredValue(line, "backend");
+    session.tokenizer_path = OptionalString(line, "tokenizer", "");
     session.adapter = CreateAdapter(line);
     BackendStateAdapter* adapter = session.adapter.get();
     sessions.emplace(session_id, std::move(session));
