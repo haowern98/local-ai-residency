@@ -205,6 +205,10 @@ ONNX LLM sessions also accept `control_input_device=cpu|cuda`. The default is
 binding and falls back to CPU-bound control inputs if ONNX Runtime rejects the
 CUDA-bound control tensors.
 
+The ONNX LLM report also includes CUDA binding and allocation diagnostics so
+the active KV-cache device residency path can be measured without adding probe
+commands.
+
 ONNX LLM sessions can accept `prompt=` or `prompt_file=` when the model folder
 provides a Hugging Face `tokenizer.json`:
 

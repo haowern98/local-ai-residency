@@ -47,6 +47,16 @@ struct OnnxLlmResidencyReport {
   std::size_t explicit_device_to_host_copies = 0;
   std::size_t explicit_device_to_host_bytes = 0;
   std::size_t control_input_cuda_fallback_count = 0;
+  std::size_t cuda_allocation_count = 0;
+  std::size_t cuda_allocation_bytes = 0;
+  std::size_t control_input_allocation_count = 0;
+  std::size_t control_input_allocation_bytes = 0;
+  std::size_t logits_allocation_count = 0;
+  std::size_t logits_allocation_bytes = 0;
+  std::size_t kv_cache_allocation_count = 0;
+  std::size_t kv_cache_allocation_bytes = 0;
+  std::size_t active_kv_device_bytes = 0;
+  std::size_t peak_kv_device_bytes = 0;
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
   std::size_t generated_tokens = 0;
@@ -138,6 +148,12 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
     double logits_checksum = 0.0;
   };
 
+  enum class CudaBufferKind {
+    kControlInput,
+    kLogits,
+    kKvCache,
+  };
+
   void CreateSession(double* elapsed_ms);
   void DiscoverModelIo();
   void AllocateInitialCache();
@@ -146,11 +162,14 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   DecodeResult RunDecodeStepWithControlInputs(
       const std::vector<int64_t>& input_tokens, int64_t past_length,
       bool read_logits, bool bind_control_inputs_to_cuda);
+  void AllocateCudaBuffer(CudaBuffer* buffer, std::size_t bytes,
+                          CudaBufferKind kind);
   void ReplaceCache(std::vector<KvTensor>* output_tensors,
                     int64_t cache_length);
   void FreeCache();
   void ValidateReadyForDecode() const;
   std::size_t CacheBytes() const;
+  void UpdateActiveKvDeviceBytes();
 
   OnnxLlmResidencyOptions options_;
   std::unique_ptr<Ort::Env> env_;

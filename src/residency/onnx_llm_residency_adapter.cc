@@ -355,8 +355,10 @@ void OnnxLlmResidencyAdapter::RestoreState() {
     shape[0] = 1;
     shape[2] = cache_length_;
     tensor.cache_shape = shape;
-    tensor.cache_buffer.Allocate(ElementCount(shape) *
-                                 TensorElementBytes(tensor.element_type));
+    AllocateCudaBuffer(
+        &tensor.cache_buffer,
+        ElementCount(shape) * TensorElementBytes(tensor.element_type),
+        CudaBufferKind::kKvCache);
     MOSAICVRAM_CUDA_CHECK(
         cudaMemcpy(tensor.cache_buffer.data, src, tensor.cache_buffer.bytes,
                    cudaMemcpyHostToDevice),
@@ -367,6 +369,7 @@ void OnnxLlmResidencyAdapter::RestoreState() {
   }
   report_.restored_kv_state_bytes = copied;
   residency_state_ = ResidencyState::kResident;
+  UpdateActiveKvDeviceBytes();
   report_.restore_state_ms = timer.ElapsedMs();
 }
 
@@ -594,9 +597,12 @@ void OnnxLlmResidencyAdapter::AllocateInitialCache() {
     shape[0] = 1;
     shape[2] = cache_length_;
     tensor.cache_shape = shape;
-    tensor.cache_buffer.Allocate(ElementCount(shape) *
-                                 TensorElementBytes(tensor.element_type));
+    AllocateCudaBuffer(
+        &tensor.cache_buffer,
+        ElementCount(shape) * TensorElementBytes(tensor.element_type),
+        CudaBufferKind::kKvCache);
   }
+  UpdateActiveKvDeviceBytes();
 }
 
 OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
@@ -665,7 +671,7 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
     if (bind_control_inputs_to_cuda) {
       const std::size_t bytes = count * sizeof(int64_t);
       CudaBuffer& buffer = control_input_buffers.emplace_back();
-      buffer.Allocate(bytes);
+      AllocateCudaBuffer(&buffer, bytes, CudaBufferKind::kControlInput);
       MOSAICVRAM_CUDA_CHECK(
           cudaMemcpy(buffer.data, data, bytes, cudaMemcpyHostToDevice),
           "copy ONNX LLM control input to CUDA");
@@ -714,8 +720,10 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
 
   CudaBuffer logits_buffer;
   const std::vector<int64_t> logits_shape = {1, input_length, vocab_size_};
-  logits_buffer.Allocate(ElementCount(logits_shape) *
-                         TensorElementBytes(logits_element_type_));
+  AllocateCudaBuffer(
+      &logits_buffer,
+      ElementCount(logits_shape) * TensorElementBytes(logits_element_type_),
+      CudaBufferKind::kLogits);
   output_values.push_back(Ort::Value::CreateTensor(
       cuda_memory_info, logits_buffer.data, logits_buffer.bytes,
       logits_shape.data(), logits_shape.size(), logits_element_type_));
@@ -734,8 +742,10 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
     present.cache_shape = tensor.base_shape;
     present.cache_shape[0] = 1;
     present.cache_shape[2] = total_length;
-    present.cache_buffer.Allocate(ElementCount(present.cache_shape) *
-                                  TensorElementBytes(present.element_type));
+    AllocateCudaBuffer(&present.cache_buffer,
+                       ElementCount(present.cache_shape) *
+                           TensorElementBytes(present.element_type),
+                       CudaBufferKind::kKvCache);
     output_values.push_back(Ort::Value::CreateTensor(
         cuda_memory_info, present.cache_buffer.data, present.cache_buffer.bytes,
         present.cache_shape.data(), present.cache_shape.size(),
@@ -820,16 +830,40 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
   return DecodeResult{best_token, checksum};
 }
 
+void OnnxLlmResidencyAdapter::AllocateCudaBuffer(CudaBuffer* buffer,
+                                                 std::size_t bytes,
+                                                 CudaBufferKind kind) {
+  buffer->Allocate(bytes);
+  ++report_.cuda_allocation_count;
+  report_.cuda_allocation_bytes += bytes;
+  switch (kind) {
+    case CudaBufferKind::kControlInput:
+      ++report_.control_input_allocation_count;
+      report_.control_input_allocation_bytes += bytes;
+      break;
+    case CudaBufferKind::kLogits:
+      ++report_.logits_allocation_count;
+      report_.logits_allocation_bytes += bytes;
+      break;
+    case CudaBufferKind::kKvCache:
+      ++report_.kv_cache_allocation_count;
+      report_.kv_cache_allocation_bytes += bytes;
+      break;
+  }
+}
+
 void OnnxLlmResidencyAdapter::ReplaceCache(
     std::vector<KvTensor>* output_tensors, int64_t cache_length) {
   kv_tensors_ = std::move(*output_tensors);
   cache_length_ = cache_length;
+  UpdateActiveKvDeviceBytes();
 }
 
 void OnnxLlmResidencyAdapter::FreeCache() {
   for (KvTensor& tensor : kv_tensors_) {
     tensor.cache_buffer.Free();
   }
+  UpdateActiveKvDeviceBytes();
 }
 
 void OnnxLlmResidencyAdapter::ValidateReadyForDecode() const {
@@ -844,6 +878,12 @@ std::size_t OnnxLlmResidencyAdapter::CacheBytes() const {
     bytes += tensor.cache_buffer.bytes;
   }
   return bytes;
+}
+
+void OnnxLlmResidencyAdapter::UpdateActiveKvDeviceBytes() {
+  report_.active_kv_device_bytes = CacheBytes();
+  report_.peak_kv_device_bytes =
+      std::max(report_.peak_kv_device_bytes, report_.active_kv_device_bytes);
 }
 
 }  // namespace mosaicvram

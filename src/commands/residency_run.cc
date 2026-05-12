@@ -703,6 +703,28 @@ void PrintAdapterReport(MosaicSessionId session_id,
         << "session" << session_id << "_control_input_cuda_fallback_count="
         << report.control_input_cuda_fallback_count << "\n"
         << "session" << session_id
+        << "_cuda_allocation_count=" << report.cuda_allocation_count << "\n"
+        << "session" << session_id
+        << "_cuda_allocation_bytes=" << report.cuda_allocation_bytes << "\n"
+        << "session" << session_id << "_control_input_allocation_count="
+        << report.control_input_allocation_count << "\n"
+        << "session" << session_id << "_control_input_allocation_bytes="
+        << report.control_input_allocation_bytes << "\n"
+        << "session" << session_id
+        << "_logits_allocation_count=" << report.logits_allocation_count << "\n"
+        << "session" << session_id
+        << "_logits_allocation_bytes=" << report.logits_allocation_bytes << "\n"
+        << "session" << session_id
+        << "_kv_cache_allocation_count=" << report.kv_cache_allocation_count
+        << "\n"
+        << "session" << session_id
+        << "_kv_cache_allocation_bytes=" << report.kv_cache_allocation_bytes
+        << "\n"
+        << "session" << session_id
+        << "_active_kv_device_bytes=" << report.active_kv_device_bytes << "\n"
+        << "session" << session_id
+        << "_peak_kv_device_bytes=" << report.peak_kv_device_bytes << "\n"
+        << "session" << session_id
         << "_input_ids_bound_device=" << report.input_ids_bound_device << "\n"
         << "session" << session_id
         << "_attention_mask_bound_device=" << report.attention_mask_bound_device
