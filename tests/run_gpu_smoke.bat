@@ -15,6 +15,10 @@ if "%LLAMA_CHECK_TENSORS%"=="" set "LLAMA_CHECK_TENSORS=false"
 if "%LLAMA_MAX_SNAPSHOT_MB%"=="" set "LLAMA_MAX_SNAPSHOT_MB=0"
 if "%ONNX_PREFILL_CHUNK%"=="" set "ONNX_PREFILL_CHUNK=512"
 if "%ONNX_MAX_SNAPSHOT_MB%"=="" set "ONNX_MAX_SNAPSHOT_MB=0"
+if "%ONNX_GRAPH_OPTIMIZATION%"=="" set "ONNX_GRAPH_OPTIMIZATION=extended"
+if "%ONNX_DISABLE_CPU_MEM_ARENA%"=="" set "ONNX_DISABLE_CPU_MEM_ARENA=false"
+if "%ONNX_DISABLE_MEM_PATTERN%"=="" set "ONNX_DISABLE_MEM_PATTERN=false"
+if "%ONNX_USE_PREPACKED_WEIGHTS%"=="" set "ONNX_USE_PREPACKED_WEIGHTS=false"
 
 if "%1"=="" (
   echo Usage: tests\run_gpu_smoke.bat llama^|onnx^|mixed
@@ -73,6 +77,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$text = $text.Replace('{{ONNX_TOKENIZER}}', '%ONNX_TOKENIZER%'); " ^
   "$text = $text.Replace('{{ONNX_PREFILL_CHUNK}}', '%ONNX_PREFILL_CHUNK%'); " ^
   "$text = $text.Replace('{{ONNX_MAX_SNAPSHOT_MB}}', '%ONNX_MAX_SNAPSHOT_MB%'); " ^
+  "$text = $text.Replace('{{ONNX_GRAPH_OPTIMIZATION}}', '%ONNX_GRAPH_OPTIMIZATION%'); " ^
+  "$text = $text.Replace('{{ONNX_DISABLE_CPU_MEM_ARENA}}', '%ONNX_DISABLE_CPU_MEM_ARENA%'); " ^
+  "$text = $text.Replace('{{ONNX_DISABLE_MEM_PATTERN}}', '%ONNX_DISABLE_MEM_PATTERN%'); " ^
+  "$text = $text.Replace('{{ONNX_USE_PREPACKED_WEIGHTS}}', '%ONNX_USE_PREPACKED_WEIGHTS%'); " ^
   "$text = $text.Replace('{{DEVICE}}', '%DEVICE%'); " ^
   "$text = $text.Replace('{{THREADS}}', '%THREADS%'); " ^
   "Set-Content -LiteralPath '%PLAN%' -Value $text -Encoding ASCII"

@@ -242,6 +242,23 @@ limit is set, `save` fails before allocating the pinned snapshot if the required
 state would exceed the budget. The report includes `snapshot_bytes` and
 `max_snapshot_bytes` so large state captures are visible.
 
+## ONNX Session Policy
+
+ONNX LLM sessions can pass through official ONNX Runtime session policy options:
+
+```text
+graph_optimization=disable|basic|extended|all
+disable_cpu_mem_arena=true|false
+disable_mem_pattern=true|false
+optimized_model_path="path\to\optimized.onnx"
+use_prepacked_weights=true|false
+```
+
+The default `graph_optimization` is `extended`, matching the original
+MosaicVRAM ONNX path. Other options are disabled by default. Prepacked weights,
+when enabled, reuse ONNX Runtime's `Ort::PrepackedWeightsContainer` across
+session reloads inside the same adapter.
+
 ## Reload Metrics
 
 `residency-run` reports derived timing fields for each session:

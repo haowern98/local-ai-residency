@@ -84,6 +84,10 @@ $env:LLAMA_CHECK_TENSORS = "false"
 $env:LLAMA_MAX_SNAPSHOT_MB = "0"
 $env:ONNX_PREFILL_CHUNK = "512"
 $env:ONNX_MAX_SNAPSHOT_MB = "0"
+$env:ONNX_GRAPH_OPTIMIZATION = "extended"
+$env:ONNX_DISABLE_CPU_MEM_ARENA = "false"
+$env:ONNX_DISABLE_MEM_PATTERN = "false"
+$env:ONNX_USE_PREPACKED_WEIGHTS = "false"
 ```
 
 ## Running Tests
@@ -132,6 +136,22 @@ RAM pressure because it asks the OS to keep model pages resident.
 the generated plan. The default value is `0`, which means no explicit
 MosaicVRAM limit. Set a nonzero value to fail cleanly before allocating a pinned
 host snapshot that would exceed the budget.
+
+## ONNX Session Policy
+
+The smoke templates expose ONNX Runtime session options:
+
+```text
+graph_optimization=disable|basic|extended|all
+disable_cpu_mem_arena=true|false
+disable_mem_pattern=true|false
+use_prepacked_weights=true|false
+```
+
+The default smoke setting keeps `graph_optimization=extended`, matching the
+normal adapter behavior. `optimized_model_path=<path>` is also supported in
+manual plans, but the smoke templates do not set it by default because it
+creates a local generated model artifact.
 
 ## ONNX Tokenization
 
@@ -237,6 +257,11 @@ sessionN_decode_valid
 sessionN_position_ids_present
 sessionN_prefill_chunks
 sessionN_prefill_chunk_tokens
+sessionN_graph_optimization
+sessionN_disable_cpu_mem_arena
+sessionN_disable_mem_pattern
+sessionN_optimized_model_path_present
+sessionN_use_prepacked_weights
 ```
 
 If `resume_match=no`, the adapter restored something different from the saved

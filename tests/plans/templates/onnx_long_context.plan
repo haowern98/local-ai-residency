@@ -1,4 +1,4 @@
-session id=1 backend=onnx-llm model="{{ONNX_MODEL}}" tokenizer="{{ONNX_TOKENIZER}}" prompt_file="{{PROMPT_FILE}}" prefill_chunk={{ONNX_PREFILL_CHUNK}} device={{DEVICE}} max_snapshot_mb={{ONNX_MAX_SNAPSHOT_MB}}
+session id=1 backend=onnx-llm model="{{ONNX_MODEL}}" tokenizer="{{ONNX_TOKENIZER}}" prompt_file="{{PROMPT_FILE}}" prefill_chunk={{ONNX_PREFILL_CHUNK}} device={{DEVICE}} max_snapshot_mb={{ONNX_MAX_SNAPSHOT_MB}} graph_optimization={{ONNX_GRAPH_OPTIMIZATION}} disable_cpu_mem_arena={{ONNX_DISABLE_CPU_MEM_ARENA}} disable_mem_pattern={{ONNX_DISABLE_MEM_PATTERN}} use_prepacked_weights={{ONNX_USE_PREPACKED_WEIGHTS}}
 
 step op=load session=1
 step op=prefill session=1
