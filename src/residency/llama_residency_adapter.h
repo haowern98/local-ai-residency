@@ -29,10 +29,12 @@ struct LlamaResidencyOptions {
   bool use_mlock = false;
   bool use_direct_io = false;
   bool check_tensors = false;
+  std::size_t max_snapshot_bytes = 0;
 };
 
 struct LlamaResidencyReport {
   std::size_t prompt_tokens = 0;
+  std::size_t snapshot_bytes = 0;
   std::size_t full_state_bytes = 0;
   std::size_t sequence_state_bytes = 0;
   std::size_t restored_full_bytes = 0;
@@ -61,6 +63,7 @@ struct LlamaResidencyReport {
   bool model_reloaded_full_restore_match = false;
   bool model_reloaded_sequence_restore_match = false;
   bool generated_contains_expected = false;
+  std::size_t max_snapshot_bytes = 0;
   double initial_model_load_ms = 0.0;
   double model_reload_ms = 0.0;
   double context_reload_ms = 0.0;

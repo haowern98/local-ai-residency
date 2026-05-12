@@ -27,6 +27,14 @@ namespace {
 constexpr std::size_t kFloat16Bytes = 2;
 constexpr std::size_t kFloat32Bytes = 4;
 
+void CheckSnapshotBudget(std::size_t snapshot_bytes,
+                         std::size_t max_snapshot_bytes) {
+  if (max_snapshot_bytes == 0 || snapshot_bytes <= max_snapshot_bytes) {
+    return;
+  }
+  throw std::runtime_error("ONNX LLM snapshot exceeds max_snapshot_mb");
+}
+
 std::wstring ToWideString(const std::string& text) {
   return std::wstring(text.begin(), text.end());
 }
@@ -281,6 +289,7 @@ BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
   Timer timer;
   ValidateReadyForDecode();
   const std::size_t bytes = CacheBytes();
+  CheckSnapshotBudget(bytes, options_.max_snapshot_bytes);
   snapshot_.full_state.Allocate(bytes);
   std::uint8_t* dst = snapshot_.full_state.data();
   for (const KvTensor& tensor : kv_tensors_) {
@@ -293,6 +302,8 @@ BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
   snapshot_.full_state_bytes = bytes;
   snapshot_.source_residency = residency_state_;
   snapshot_cache_length_ = cache_length_;
+  report_.snapshot_bytes = bytes;
+  report_.max_snapshot_bytes = options_.max_snapshot_bytes;
   report_.kv_state_bytes = bytes;
   report_.save_state_ms = timer.ElapsedMs();
   return snapshot_;

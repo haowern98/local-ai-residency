@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -48,6 +49,8 @@ struct Options {
   std::string plan_path;
   bool help_requested = false;
 };
+
+constexpr std::uint64_t kBytesPerMiB = 1024ULL * 1024ULL;
 
 bool ParseInt(std::string_view text, int* value) {
   int parsed = 0;
@@ -217,6 +220,28 @@ bool OptionalBool(const PlanLine& line, const std::string& key,
     throw std::runtime_error(message.str());
   }
   return parsed;
+}
+
+std::size_t OptionalBytesFromMiB(const PlanLine& line, const std::string& key,
+                                 std::size_t default_value) {
+  const auto it = line.values.find(key);
+  if (it == line.values.end()) {
+    return default_value;
+  }
+  std::uint64_t mib = 0;
+  if (!ParseUint64(it->second, &mib)) {
+    std::ostringstream message;
+    message << "line " << line.line_number << " has invalid MiB value for "
+            << key;
+    throw std::runtime_error(message.str());
+  }
+  if (mib > std::numeric_limits<std::size_t>::max() / kBytesPerMiB) {
+    std::ostringstream message;
+    message << "line " << line.line_number << " has too large MiB value for "
+            << key;
+    throw std::runtime_error(message.str());
+  }
+  return static_cast<std::size_t>(mib * kBytesPerMiB);
 }
 
 MosaicSessionId RequiredSessionId(const PlanLine& line,
@@ -511,6 +536,8 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
         OptionalBool(line, "use_direct_io", options.use_direct_io);
     options.check_tensors =
         OptionalBool(line, "check_tensors", options.check_tensors);
+    options.max_snapshot_bytes = OptionalBytesFromMiB(
+        line, "max_snapshot_mb", options.max_snapshot_bytes);
     return std::make_unique<LlamaResidencyAdapter>(std::move(options));
   }
 #endif  // MOSAICVRAM_ENABLE_LLAMA
@@ -524,6 +551,8 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.prefill_chunk_tokens =
         OptionalInt(line, "prefill_chunk", options.prefill_chunk_tokens);
     options.device_index = OptionalInt(line, "device", options.device_index);
+    options.max_snapshot_bytes = OptionalBytesFromMiB(
+        line, "max_snapshot_mb", options.max_snapshot_bytes);
     return std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
@@ -687,6 +716,10 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_check_tensors=" << BoolText(adapter->options().check_tensors)
               << "\n"
               << "session" << session_id
+              << "_snapshot_bytes=" << report.snapshot_bytes << "\n"
+              << "session" << session_id
+              << "_max_snapshot_bytes=" << report.max_snapshot_bytes << "\n"
+              << "session" << session_id
               << "_full_state_bytes=" << report.full_state_bytes << "\n"
               << "session" << session_id
               << "_baseline_next_token=" << report.baseline_next_token << "\n"
@@ -766,6 +799,10 @@ void PrintAdapterReport(MosaicSessionId session_id,
               << "_decode_valid=" << BoolText(report.decode_valid) << "\n"
               << "session" << session_id << "_position_ids_present="
               << BoolText(report.position_ids_present) << "\n"
+              << "session" << session_id
+              << "_snapshot_bytes=" << report.snapshot_bytes << "\n"
+              << "session" << session_id
+              << "_max_snapshot_bytes=" << report.max_snapshot_bytes << "\n"
               << "session" << session_id
               << "_kv_state_bytes=" << report.kv_state_bytes << "\n"
               << "session" << session_id

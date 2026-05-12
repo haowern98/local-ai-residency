@@ -48,6 +48,14 @@ void AddTokenToBatch(llama_batch* batch, llama_token token, llama_pos position,
   batch->n_tokens++;
 }
 
+void CheckSnapshotBudget(std::size_t snapshot_bytes,
+                         std::size_t max_snapshot_bytes) {
+  if (max_snapshot_bytes == 0 || snapshot_bytes <= max_snapshot_bytes) {
+    return;
+  }
+  throw std::runtime_error("llama snapshot exceeds max_snapshot_mb");
+}
+
 }  // namespace
 
 LlamaResidencyAdapter::BackendLifetime::BackendLifetime() {
@@ -132,6 +140,13 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
   }
 
   const std::size_t full_size = llama_state_get_size(context_.get());
+  const std::size_t sequence_size =
+      llama_state_seq_get_size(context_.get(), options_.sequence_id);
+  if (full_size > std::numeric_limits<std::size_t>::max() - sequence_size) {
+    throw std::runtime_error("llama snapshot size overflow");
+  }
+  CheckSnapshotBudget(full_size + sequence_size, options_.max_snapshot_bytes);
+
   snapshot_.full_state.Allocate(full_size);
   snapshot_.full_state_bytes = llama_state_get_data(
       context_.get(), snapshot_.full_state.data(), snapshot_.full_state.size());
@@ -140,8 +155,6 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
     throw std::runtime_error("failed to copy full llama state");
   }
 
-  const std::size_t sequence_size =
-      llama_state_seq_get_size(context_.get(), options_.sequence_id);
   snapshot_.sequence_state.Allocate(sequence_size);
   snapshot_.sequence_state_bytes = llama_state_seq_get_data(
       context_.get(), snapshot_.sequence_state.data(),
@@ -153,6 +166,9 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
 
   snapshot_.source_residency = residency_state_;
   snapshot_decode_position_ = next_decode_position_;
+  report_.snapshot_bytes =
+      snapshot_.full_state_bytes + snapshot_.sequence_state_bytes;
+  report_.max_snapshot_bytes = options_.max_snapshot_bytes;
   report_.full_state_bytes = snapshot_.full_state_bytes;
   report_.sequence_state_bytes = snapshot_.sequence_state_bytes;
   report_.save_state_ms = timer.ElapsedMs();

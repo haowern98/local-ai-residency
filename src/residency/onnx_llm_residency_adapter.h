@@ -21,6 +21,7 @@ struct OnnxLlmResidencyOptions {
   std::vector<int64_t> prompt_tokens;
   int prefill_chunk_tokens = 512;
   int device_index = 0;
+  std::size_t max_snapshot_bytes = 0;
 };
 
 struct OnnxLlmResidencyReport {
@@ -36,6 +37,7 @@ struct OnnxLlmResidencyReport {
   std::size_t prompt_tokens = 0;
   std::size_t prefill_chunks = 0;
   int prefill_chunk_tokens = 0;
+  std::size_t snapshot_bytes = 0;
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
   std::size_t generated_tokens = 0;
@@ -53,6 +55,7 @@ struct OnnxLlmResidencyReport {
   double restore_state_ms = 0.0;
   double resume_check_ms = 0.0;
   double restore_generate_ms = 0.0;
+  std::size_t max_snapshot_bytes = 0;
   bool position_ids_present = false;
   bool decode_valid = false;
   bool cache_surface_found = false;

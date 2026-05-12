@@ -12,7 +12,9 @@ if "%LLAMA_USE_MMAP%"=="" set "LLAMA_USE_MMAP=true"
 if "%LLAMA_USE_MLOCK%"=="" set "LLAMA_USE_MLOCK=false"
 if "%LLAMA_USE_DIRECT_IO%"=="" set "LLAMA_USE_DIRECT_IO=false"
 if "%LLAMA_CHECK_TENSORS%"=="" set "LLAMA_CHECK_TENSORS=false"
+if "%LLAMA_MAX_SNAPSHOT_MB%"=="" set "LLAMA_MAX_SNAPSHOT_MB=0"
 if "%ONNX_PREFILL_CHUNK%"=="" set "ONNX_PREFILL_CHUNK=512"
+if "%ONNX_MAX_SNAPSHOT_MB%"=="" set "ONNX_MAX_SNAPSHOT_MB=0"
 
 if "%1"=="" (
   echo Usage: tests\run_gpu_smoke.bat llama^|onnx^|mixed
@@ -66,9 +68,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$text = $text.Replace('{{LLAMA_USE_MLOCK}}', '%LLAMA_USE_MLOCK%'); " ^
   "$text = $text.Replace('{{LLAMA_USE_DIRECT_IO}}', '%LLAMA_USE_DIRECT_IO%'); " ^
   "$text = $text.Replace('{{LLAMA_CHECK_TENSORS}}', '%LLAMA_CHECK_TENSORS%'); " ^
+  "$text = $text.Replace('{{LLAMA_MAX_SNAPSHOT_MB}}', '%LLAMA_MAX_SNAPSHOT_MB%'); " ^
   "$text = $text.Replace('{{ONNX_MODEL}}', '%ONNX_MODEL%'); " ^
   "$text = $text.Replace('{{ONNX_TOKENIZER}}', '%ONNX_TOKENIZER%'); " ^
   "$text = $text.Replace('{{ONNX_PREFILL_CHUNK}}', '%ONNX_PREFILL_CHUNK%'); " ^
+  "$text = $text.Replace('{{ONNX_MAX_SNAPSHOT_MB}}', '%ONNX_MAX_SNAPSHOT_MB%'); " ^
   "$text = $text.Replace('{{DEVICE}}', '%DEVICE%'); " ^
   "$text = $text.Replace('{{THREADS}}', '%THREADS%'); " ^
   "Set-Content -LiteralPath '%PLAN%' -Value $text -Encoding ASCII"

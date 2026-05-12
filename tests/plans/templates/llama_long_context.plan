@@ -1,4 +1,4 @@
-session id=1 backend=llama model="{{LLAMA_MODEL}}" prompt="{{PROMPT_TEXT}}" ctx={{LLAMA_CTX}} batch={{LLAMA_BATCH}} gpu_layers={{LLAMA_GPU_LAYERS}} device={{DEVICE}} threads={{THREADS}} use_mmap={{LLAMA_USE_MMAP}} use_mlock={{LLAMA_USE_MLOCK}} use_direct_io={{LLAMA_USE_DIRECT_IO}} check_tensors={{LLAMA_CHECK_TENSORS}}
+session id=1 backend=llama model="{{LLAMA_MODEL}}" prompt="{{PROMPT_TEXT}}" ctx={{LLAMA_CTX}} batch={{LLAMA_BATCH}} gpu_layers={{LLAMA_GPU_LAYERS}} device={{DEVICE}} threads={{THREADS}} use_mmap={{LLAMA_USE_MMAP}} use_mlock={{LLAMA_USE_MLOCK}} use_direct_io={{LLAMA_USE_DIRECT_IO}} check_tensors={{LLAMA_CHECK_TENSORS}} max_snapshot_mb={{LLAMA_MAX_SNAPSHOT_MB}}
 
 step op=load session=1
 step op=prefill session=1

@@ -81,7 +81,9 @@ $env:LLAMA_USE_MMAP = "true"
 $env:LLAMA_USE_MLOCK = "false"
 $env:LLAMA_USE_DIRECT_IO = "false"
 $env:LLAMA_CHECK_TENSORS = "false"
+$env:LLAMA_MAX_SNAPSHOT_MB = "0"
 $env:ONNX_PREFILL_CHUNK = "512"
+$env:ONNX_MAX_SNAPSHOT_MB = "0"
 ```
 
 ## Running Tests
@@ -123,6 +125,13 @@ check_tensors
 The default smoke settings match llama.cpp defaults. Override the environment
 variables only when testing reload behavior. `LLAMA_USE_MLOCK=true` can increase
 RAM pressure because it asks the OS to keep model pages resident.
+
+## Snapshot Memory Limits
+
+`LLAMA_MAX_SNAPSHOT_MB` and `ONNX_MAX_SNAPSHOT_MB` map to `max_snapshot_mb` in
+the generated plan. The default value is `0`, which means no explicit
+MosaicVRAM limit. Set a nonzero value to fail cleanly before allocating a pinned
+host snapshot that would exceed the budget.
 
 ## ONNX Tokenization
 
@@ -194,6 +203,8 @@ sessionN_use_mmap
 sessionN_use_mlock
 sessionN_use_direct_io
 sessionN_check_tensors
+sessionN_snapshot_bytes
+sessionN_max_snapshot_bytes
 sessionN_prefill_ms
 sessionN_save_state_ms
 sessionN_evict_context_ms

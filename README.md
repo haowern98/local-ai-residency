@@ -229,6 +229,19 @@ The defaults match llama.cpp defaults: `use_mmap=true`, `use_mlock=false`,
 diagnostics and platform tuning. `use_mlock=true` can increase RAM pressure
 because it asks the OS to keep mapped model pages resident.
 
+## Snapshot Memory Limits
+
+Sessions can set an optional pinned-host snapshot budget:
+
+```text
+max_snapshot_mb=4096
+```
+
+The default is `0`, which means no explicit MosaicVRAM limit. When a nonzero
+limit is set, `save` fails before allocating the pinned snapshot if the required
+state would exceed the budget. The report includes `snapshot_bytes` and
+`max_snapshot_bytes` so large state captures are visible.
+
 ## Reload Metrics
 
 `residency-run` reports derived timing fields for each session:
