@@ -100,7 +100,8 @@ cmake --build build-llama-onnx
 
 Build with ONNX LLM text prompts from `tokenizer.json`:
 
-This path uses `tokenizers-cpp`, so Rust/Cargo must be available on `PATH`.
+This path links `tokenizers-cpp` into `mosaicvram.exe`. Rust/Cargo must be
+available on `PATH` while building, but they are not runtime requirements.
 
 ```text
 git clone https://github.com/mlc-ai/tokenizers-cpp.git deps\tokenizers-cpp
@@ -205,6 +206,10 @@ provides a Hugging Face `tokenizer.json`:
 session id=2 backend=onnx-llm model="models\qwen3.onnx" tokenizer="models\qwen3" prompt_file="prompts\long.txt" prefill_chunk=512 device=0
 ```
 
+The `tokenizer=` value can point either to `tokenizer.json` itself or to a
+directory containing `tokenizer.json`. Tokenization runs inside the C++ process;
+Python and Hugging Face Transformers are not used at runtime.
+
 `tokens_file=` remains available as an advanced pre-tokenized path. Inline
 `tokens=` is not accepted for ONNX session prompts.
 
@@ -278,6 +283,10 @@ Dynamic tensor shapes can be provided with:
 
 - ONNX LLM text tokenization currently supports Hugging Face `tokenizer.json`
   files when `MOSAICVRAM_ENABLE_TOKENIZER_JSON=ON` is enabled at build time.
+- SentencePiece `.model` tokenizers are not supported yet.
+- `tokenizer_config.json` without a `tokenizer.json` file is not enough.
+- Python tokenizers and custom Hugging Face tokenizer code are not used at
+  runtime.
 - ONNX LLM support requires explicit KV-cache inputs and outputs.
 - Provider-specific custom ops are not portable unless the required provider is
   available at runtime.

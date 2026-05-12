@@ -2,8 +2,8 @@
 """Tokenizes a text fixture for ONNX LLM tokenizer diagnostics.
 
 The normal runtime path uses MosaicVRAM's native tokenizer.json adapter. This
-helper is test-only and can be used to compare native output with Hugging Face
-Transformers output.
+helper is not used by run_gpu_smoke.bat. It is test-only and can compare native
+output with Hugging Face Transformers output.
 """
 
 from __future__ import annotations

@@ -28,8 +28,9 @@ Git.
 
 Build Local AI Residency with both llama.cpp and ONNX Runtime support:
 
-The `tokenizer.json` path uses `tokenizers-cpp`, so Rust/Cargo must be
-available on `PATH`.
+The `tokenizer.json` path links `tokenizers-cpp` into `mosaicvram.exe`.
+Rust/Cargo must be available on `PATH` while building, but they are not runtime
+requirements.
 
 ```text
 git clone https://github.com/mlc-ai/tokenizers-cpp.git deps\tokenizers-cpp
@@ -61,7 +62,7 @@ cd "<repo>\mosaicvram"
 
 $env:LLAMA_MODEL = "<path>\model.gguf"
 $env:ONNX_MODEL = "<path>\model.onnx"
-$env:ONNX_TOKENIZER = "<path>\tokenizer_directory"
+$env:ONNX_TOKENIZER = "<path>\tokenizer_directory_with_tokenizer_json"
 
 $env:PATH = "<path>\llama.cpp\build-cuda\bin;<path>\onnxruntime\lib;<path>\CUDA\bin;<path>\torch\lib;$env:PATH"
 ```
@@ -111,6 +112,10 @@ loads the model-specific Hugging Face `tokenizer.json` supplied by
 `ONNX_TOKENIZER` and converts the prompt text into token IDs inside the C++
 process.
 
+`ONNX_TOKENIZER` must point to `tokenizer.json` or to a directory containing
+`tokenizer.json`. The smoke script does not call Python or Hugging Face
+Transformers for normal runs.
+
 The same prompt can produce different token counts for different models. For
 example, a prompt that is 15,000 tokens for one tokenizer may be more or fewer
 tokens for another tokenizer.
@@ -126,6 +131,10 @@ That path is not the normal user flow. The normal ONNX flow is:
 ```text
 prompt text -> native tokenizer.json adapter -> token IDs -> ONNX Runtime tensors
 ```
+
+`tests/scripts/make_onnx_tokens.py` is diagnostic-only. It can compare native
+tokenizer output against Hugging Face Transformers, but `run_gpu_smoke.bat` does
+not use it.
 
 ## Restore Correctness
 
