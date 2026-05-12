@@ -39,7 +39,8 @@ cmake --build build-llama-onnx
 ```
 
 The runtime DLLs must be on `PATH`: llama.cpp CUDA DLLs, ONNX Runtime GPU DLLs,
-CUDA, and cuDNN.
+CUDA, and cuDNN. ONNX text prompts also require a local Python environment with
+`transformers` installed so MosaicVRAM can load the model tokenizer internally.
 
 ## PowerShell Setup
 
@@ -67,6 +68,7 @@ $env:LLAMA_CTX = "16384"
 $env:LLAMA_BATCH = "512"
 $env:LLAMA_GPU_LAYERS = "-1"
 $env:ONNX_PREFILL_CHUNK = "512"
+$env:MOSAICVRAM_PYTHON = "python"
 ```
 
 ## Running Tests
@@ -95,18 +97,26 @@ so ONNX can be restored and checked too.
 
 ## ONNX Tokenization
 
-ONNX Runtime does not provide a tokenizer. The smoke script uses
-`tests/scripts/make_onnx_tokens.py` to tokenize `15k_prompt.txt` with the
-model-specific Hugging Face tokenizer directory supplied by `ONNX_TOKENIZER`.
+ONNX Runtime does not provide a tokenizer. The smoke plans pass
+`tokenizer=<path>` and `prompt_file=<path>` to `residency-run`. MosaicVRAM then
+loads the model-specific Hugging Face tokenizer directory supplied by
+`ONNX_TOKENIZER` and converts the prompt text into token IDs before calling
+`Ort::Session`.
 
 The same prompt can produce different token counts for different models. For
 example, a prompt that is 15,000 tokens for one tokenizer may be more or fewer
 tokens for another tokenizer.
 
-The generated token file is passed into the ONNX plan with:
+For advanced diagnostics, ONNX sessions can still accept a pre-tokenized file:
 
 ```text
 tokens_file=tests\generated\onnx_tokens.txt
+```
+
+That path is not the normal user flow. The normal ONNX flow is:
+
+```text
+prompt text -> tokenizer adapter -> token IDs -> ONNX Runtime tensors
 ```
 
 ## Restore Correctness

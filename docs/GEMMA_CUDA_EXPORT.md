@@ -84,7 +84,7 @@ create_model(
 Use the exported `model_fp16.onnx` in a normal `residency-run` plan:
 
 ```text
-session id=1 backend=onnx-llm model="models\gemma-3-1b-it-oga-cuda-fp16\model_fp16.onnx" tokens=4754,1463,563,175475,860,765,236761,21429,672,236761 device=0
+session id=1 backend=onnx-llm model="models\gemma-3-1b-it-oga-cuda-fp16\model_fp16.onnx" tokenizer="models\gemma-3-1b-it-oga-cuda-fp16" prompt="Remember the code xjghft." device=0
 step op=load session=1
 step op=prefill session=1
 step op=save session=1

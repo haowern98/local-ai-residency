@@ -113,7 +113,7 @@ A plan declares sessions and then executes lifecycle steps:
 
 ```text
 session id=1 backend=llama model="models\qwen.gguf" prompt="My name is xjghft. Remember this." ctx=512 batch=512 gpu_layers=-1 device=0
-session id=2 backend=onnx-llm model="models\qwen3.onnx" tokens=151644,872,198,9707,151645,198 prefill_chunk=512 device=0
+session id=2 backend=onnx-llm model="models\qwen3.onnx" tokenizer="models\qwen3" prompt="My name is xjghft. Remember this." prefill_chunk=512 device=0
 
 step op=load session=1
 step op=prefill session=1
@@ -161,21 +161,30 @@ For llama.cpp sessions, `restore_then_generate` accepts text:
 step op=restore_then_generate session=1 text=" What is my name?" max_tokens=32 expect="xjghft"
 ```
 
-For ONNX LLM sessions, `restore_then_generate` accepts token IDs because ONNX
-Runtime does not provide model tokenization:
+For ONNX LLM sessions, `restore_then_generate` accepts text when the session has
+a tokenizer:
 
 ```text
-step op=restore_then_generate session=2 tokens=3555,374,847,829,30 max_tokens=32 expect_tokens=73,866,723
+step op=restore_then_generate session=2 text=" What is my name?" max_tokens=32
 ```
 
-The `expect` and `expect_tokens` fields are optional. They are useful for
-human-readable demos, while `resume_match=yes` remains the stricter correctness
-signal.
+The `expect` and `expect_tokens` fields are optional. They are useful for demos,
+while `resume_match=yes` remains the stricter correctness signal.
 
 ONNX LLM sessions accept `prefill_chunk=<tokens>` to process long prompts as
 repeated `[1, chunk_len]` ONNX Runtime calls while carrying the KV cache forward.
 This mirrors ONNX's tensor-shaped execution model instead of submitting one
 large prompt tensor.
+
+ONNX LLM sessions can accept normal text when a matching Hugging Face tokenizer
+directory is supplied:
+
+```text
+session id=2 backend=onnx-llm model="models\qwen3.onnx" tokenizer="models\qwen3" prompt_file="prompts\long.txt" prefill_chunk=512 device=0
+```
+
+The tokenizer files still come from the model package. MosaicVRAM loads them and
+turns text into token IDs before calling `Ort::Session`.
 
 ## Validation Results
 
@@ -245,8 +254,8 @@ Dynamic tensor shapes can be provided with:
 
 ## Limitations
 
-- ONNX LLM text tokenization is outside the runtime. Users must provide token
-  IDs unless a future tokenizer adapter is configured.
+- ONNX LLM text tokenization requires a matching Hugging Face tokenizer
+  directory and a local Python environment with `transformers` available.
 - ONNX LLM support requires explicit KV-cache inputs and outputs.
 - Provider-specific custom ops are not portable unless the required provider is
   available at runtime.

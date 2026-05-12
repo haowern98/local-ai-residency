@@ -51,7 +51,8 @@ if(MOSAICVRAM_ENABLE_ONNX)
   endif()
 
   target_sources(mosaicvram PRIVATE src/backend/onnx_backend.cc
-                                    src/residency/onnx_llm_residency_adapter.cc)
+                                    src/residency/onnx_llm_residency_adapter.cc
+                                    src/tokenizer/hf_tokenizer_adapter.cc)
   target_compile_definitions(mosaicvram PRIVATE MOSAICVRAM_ENABLE_ONNX)
   target_include_directories(mosaicvram
                              PRIVATE "${MOSAICVRAM_ONNXRUNTIME_DIR}/include")

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tokenizes a text fixture for an ONNX LLM residency plan.
+"""Tokenizes a text fixture for an advanced ONNX LLM residency plan.
 
-This helper is intentionally outside the C++ runtime. ONNX Runtime does not
-standardize tokenization, so users should supply the tokenizer matching their
-model export.
+The normal ONNX LLM path is prompt_file=... plus tokenizer=..., which lets
+MosaicVRAM tokenize internally. This helper remains useful for diagnostics that
+need a fixed token file.
 """
 
 from __future__ import annotations
