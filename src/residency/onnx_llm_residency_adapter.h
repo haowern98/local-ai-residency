@@ -21,6 +21,7 @@ struct OnnxLlmResidencyOptions {
   std::vector<int64_t> prompt_tokens;
   int prefill_chunk_tokens = 512;
   int device_index = 0;
+  std::string control_input_device = "cpu";
 };
 
 struct OnnxLlmResidencyReport {
@@ -45,9 +46,12 @@ struct OnnxLlmResidencyReport {
   std::size_t explicit_host_to_device_bytes = 0;
   std::size_t explicit_device_to_host_copies = 0;
   std::size_t explicit_device_to_host_bytes = 0;
+  std::size_t control_input_cuda_fallback_count = 0;
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
   std::size_t generated_tokens = 0;
+  std::string control_input_preferred_device;
+  std::string control_input_actual_device;
   std::string input_ids_bound_device;
   std::string attention_mask_bound_device;
   std::string position_ids_bound_device;
@@ -139,6 +143,9 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   void AllocateInitialCache();
   DecodeResult RunDecodeStep(const std::vector<int64_t>& input_tokens,
                              int64_t past_length, bool read_logits);
+  DecodeResult RunDecodeStepWithControlInputs(
+      const std::vector<int64_t>& input_tokens, int64_t past_length,
+      bool read_logits, bool bind_control_inputs_to_cuda);
   void ReplaceCache(std::vector<KvTensor>* output_tensors,
                     int64_t cache_length);
   void FreeCache();

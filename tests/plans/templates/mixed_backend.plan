@@ -1,5 +1,5 @@
 session id=1 backend=llama model="{{LLAMA_MODEL}}" prompt="{{PROMPT_TEXT}}" ctx={{LLAMA_CTX}} batch={{LLAMA_BATCH}} gpu_layers={{LLAMA_GPU_LAYERS}} device={{DEVICE}} threads={{THREADS}}
-session id=2 backend=onnx-llm model="{{ONNX_MODEL}}" tokenizer="{{ONNX_TOKENIZER}}" prompt_file="{{PROMPT_FILE}}" prefill_chunk={{ONNX_PREFILL_CHUNK}} device={{DEVICE}}
+session id=2 backend=onnx-llm model="{{ONNX_MODEL}}" tokenizer="{{ONNX_TOKENIZER}}" prompt_file="{{PROMPT_FILE}}" prefill_chunk={{ONNX_PREFILL_CHUNK}} device={{DEVICE}} control_input_device={{ONNX_CONTROL_INPUT_DEVICE}}
 
 step op=load session=1
 step op=prefill session=1

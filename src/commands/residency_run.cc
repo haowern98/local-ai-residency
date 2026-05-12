@@ -490,6 +490,8 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.prefill_chunk_tokens =
         OptionalInt(line, "prefill_chunk", options.prefill_chunk_tokens);
     options.device_index = OptionalInt(line, "device", options.device_index);
+    options.control_input_device = OptionalString(line, "control_input_device",
+                                                  options.control_input_device);
     return std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
@@ -693,6 +695,13 @@ void PrintAdapterReport(MosaicSessionId session_id,
         << "_prefill_chunk_tokens=" << report.prefill_chunk_tokens << "\n"
         << "session" << session_id
         << "_session_run_count=" << report.session_run_count << "\n"
+        << "session" << session_id << "_control_input_preferred_device="
+        << report.control_input_preferred_device << "\n"
+        << "session" << session_id
+        << "_control_input_actual_device=" << report.control_input_actual_device
+        << "\n"
+        << "session" << session_id << "_control_input_cuda_fallback_count="
+        << report.control_input_cuda_fallback_count << "\n"
         << "session" << session_id
         << "_input_ids_bound_device=" << report.input_ids_bound_device << "\n"
         << "session" << session_id

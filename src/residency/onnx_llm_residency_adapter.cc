@@ -242,6 +242,11 @@ void OnnxLlmResidencyAdapter::Load() {
   if (options_.prefill_chunk_tokens <= 0) {
     throw std::runtime_error("ONNX LLM prefill chunk size must be positive");
   }
+  if (options_.control_input_device != "cpu" &&
+      options_.control_input_device != "cuda") {
+    throw std::runtime_error(
+        "ONNX LLM control_input_device must be cpu or cuda");
+  }
   MOSAICVRAM_CUDA_CHECK(cudaSetDevice(options_.device_index),
                         "set ONNX LLM CUDA device");
 
@@ -597,6 +602,37 @@ void OnnxLlmResidencyAdapter::AllocateInitialCache() {
 OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
     const std::vector<int64_t>& input_tokens, int64_t past_length,
     bool read_logits) {
+  report_.control_input_preferred_device = options_.control_input_device;
+  if (options_.control_input_device == "cpu") {
+    return RunDecodeStepWithControlInputs(input_tokens, past_length,
+                                          read_logits, false);
+  }
+
+  const OnnxLlmResidencyReport report_before_cuda_attempt = report_;
+  try {
+    return RunDecodeStepWithControlInputs(input_tokens, past_length,
+                                          read_logits, true);
+  } catch (const Ort::Exception& cuda_error) {
+    report_ = report_before_cuda_attempt;
+    report_.control_input_preferred_device = "cuda";
+    ++report_.control_input_cuda_fallback_count;
+    try {
+      return RunDecodeStepWithControlInputs(input_tokens, past_length,
+                                            read_logits, false);
+    } catch (const Ort::Exception& cpu_error) {
+      std::ostringstream message;
+      message << "ONNX LLM CUDA control input binding failed: "
+              << cuda_error.what()
+              << "; CPU control input fallback failed: " << cpu_error.what();
+      throw std::runtime_error(message.str());
+    }
+  }
+}
+
+OnnxLlmResidencyAdapter::DecodeResult
+OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
+    const std::vector<int64_t>& input_tokens, int64_t past_length,
+    bool read_logits, bool bind_control_inputs_to_cuda) {
   if (input_tokens.empty()) {
     throw std::runtime_error("ONNX LLM decode requires tokens");
   }
@@ -610,38 +646,58 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
   Ort::IoBinding binding(*session_);
   std::vector<Ort::Value> input_values;
   std::vector<Ort::Value> output_values;
+  std::vector<CudaBuffer> control_input_buffers;
   input_values.reserve(3 + kv_tensors_.size());
   output_values.reserve(1 + kv_tensors_.size());
+  control_input_buffers.reserve(3);
 
   const std::vector<int64_t> input_shape = {1, input_length};
   const std::vector<int64_t> mask_shape = {1, total_length};
   std::vector<int64_t> mask(static_cast<std::size_t>(total_length), 1);
+  std::vector<int64_t> positions;
 
-  input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-      cpu_memory_info, const_cast<int64_t*>(input_tokens.data()),
-      input_tokens.size(), input_shape.data(), input_shape.size()));
-  binding.BindInput(input_ids_name_.c_str(), input_values.back());
-  report_.input_ids_bound_device = "cpu";
-  ++report_.bound_cpu_input_count;
+  report_.control_input_actual_device =
+      bind_control_inputs_to_cuda ? "cuda" : "cpu";
 
-  input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-      cpu_memory_info, mask.data(), mask.size(), mask_shape.data(),
-      mask_shape.size()));
-  binding.BindInput(attention_mask_name_.c_str(), input_values.back());
-  report_.attention_mask_bound_device = "cpu";
-  ++report_.bound_cpu_input_count;
+  auto bind_int64_input =
+      [&](const std::string& name, const int64_t* data, std::size_t count,
+          const std::vector<int64_t>& shape) -> std::string {
+    if (bind_control_inputs_to_cuda) {
+      const std::size_t bytes = count * sizeof(int64_t);
+      CudaBuffer& buffer = control_input_buffers.emplace_back();
+      buffer.Allocate(bytes);
+      MOSAICVRAM_CUDA_CHECK(
+          cudaMemcpy(buffer.data, data, bytes, cudaMemcpyHostToDevice),
+          "copy ONNX LLM control input to CUDA");
+      CountHostToDeviceCopy(bytes, &report_);
+      input_values.push_back(Ort::Value::CreateTensor(
+          cuda_memory_info, buffer.data, buffer.bytes, shape.data(),
+          shape.size(), ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64));
+      binding.BindInput(name.c_str(), input_values.back());
+      ++report_.bound_cuda_input_count;
+      return "cuda";
+    }
+
+    input_values.push_back(Ort::Value::CreateTensor<int64_t>(
+        cpu_memory_info, const_cast<int64_t*>(data), count, shape.data(),
+        shape.size()));
+    binding.BindInput(name.c_str(), input_values.back());
+    ++report_.bound_cpu_input_count;
+    return "cpu";
+  };
+
+  report_.input_ids_bound_device = bind_int64_input(
+      input_ids_name_, input_tokens.data(), input_tokens.size(), input_shape);
+  report_.attention_mask_bound_device = bind_int64_input(
+      attention_mask_name_, mask.data(), mask.size(), mask_shape);
 
   if (!position_ids_name_.empty()) {
-    std::vector<int64_t> positions(static_cast<std::size_t>(input_length));
+    positions.resize(static_cast<std::size_t>(input_length));
     for (int64_t i = 0; i < input_length; ++i) {
       positions[static_cast<std::size_t>(i)] = past_length + i;
     }
-    input_values.push_back(Ort::Value::CreateTensor<int64_t>(
-        cpu_memory_info, positions.data(), positions.size(), input_shape.data(),
-        input_shape.size()));
-    binding.BindInput(position_ids_name_.c_str(), input_values.back());
-    report_.position_ids_bound_device = "cpu";
-    ++report_.bound_cpu_input_count;
+    report_.position_ids_bound_device = bind_int64_input(
+        position_ids_name_, positions.data(), positions.size(), input_shape);
   } else {
     report_.position_ids_bound_device = "absent";
   }

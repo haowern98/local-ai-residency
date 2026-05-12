@@ -78,6 +78,7 @@ $env:LLAMA_CTX = "16384"
 $env:LLAMA_BATCH = "512"
 $env:LLAMA_GPU_LAYERS = "-1"
 $env:ONNX_PREFILL_CHUNK = "512"
+$env:ONNX_CONTROL_INPUT_DEVICE = "cpu"
 ```
 
 ## Running Tests
@@ -186,6 +187,9 @@ sessionN_resume_match
 For ONNX LLMs, compatibility diagnostics are also reported:
 
 ```text
+sessionN_control_input_preferred_device
+sessionN_control_input_actual_device
+sessionN_control_input_cuda_fallback_count
 sessionN_logits_dtype
 sessionN_logits_vocab_size
 sessionN_logits_finite_count

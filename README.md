@@ -199,6 +199,12 @@ repeated `[1, chunk_len]` ONNX Runtime calls while carrying the KV cache forward
 This mirrors ONNX's tensor-shaped execution model instead of submitting one
 large prompt tensor.
 
+ONNX LLM sessions also accept `control_input_device=cpu|cuda`. The default is
+`cpu`, which keeps existing behavior. `cuda` binds `input_ids`,
+`attention_mask`, and `position_ids` as CUDA tensors through ONNX Runtime I/O
+binding and falls back to CPU-bound control inputs if ONNX Runtime rejects the
+CUDA-bound control tensors.
+
 ONNX LLM sessions can accept `prompt=` or `prompt_file=` when the model folder
 provides a Hugging Face `tokenizer.json`:
 
