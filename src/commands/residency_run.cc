@@ -684,58 +684,96 @@ void PrintAdapterReport(MosaicSessionId session_id,
       return;
     }
     const OnnxLlmResidencyReport& report = adapter->report();
-    std::cout << "session" << session_id
-              << "_prompt_tokens=" << report.prompt_tokens << "\n"
-              << "session" << session_id
-              << "_prefill_chunks=" << report.prefill_chunks << "\n"
-              << "session" << session_id
-              << "_prefill_chunk_tokens=" << report.prefill_chunk_tokens << "\n"
-              << "session" << session_id
-              << "_logits_dtype=" << report.logits_dtype << "\n"
-              << "session" << session_id
-              << "_logits_vocab_size=" << report.logits_vocab_size << "\n"
-              << "session" << session_id
-              << "_logits_finite_count=" << report.logits_finite_count << "\n"
-              << "session" << session_id
-              << "_logits_nan_count=" << report.logits_nan_count << "\n"
-              << "session" << session_id
-              << "_logits_pos_inf_count=" << report.logits_pos_inf_count << "\n"
-              << "session" << session_id
-              << "_logits_neg_inf_count=" << report.logits_neg_inf_count << "\n"
-              << "session" << session_id
-              << "_decode_valid=" << BoolText(report.decode_valid) << "\n"
-              << "session" << session_id << "_position_ids_present="
-              << BoolText(report.position_ids_present) << "\n"
-              << "session" << session_id
-              << "_kv_state_bytes=" << report.kv_state_bytes << "\n"
-              << "session" << session_id
-              << "_restored_kv_state_bytes=" << report.restored_kv_state_bytes
-              << "\n"
-              << "session" << session_id
-              << "_baseline_next_token=" << report.baseline_next_token << "\n"
-              << "session" << session_id
-              << "_restored_next_token=" << report.restored_next_token << "\n"
-              << "session" << session_id
-              << "_resume_match=" << BoolText(report.resume_match) << "\n"
-              << "session" << session_id
-              << "_initial_session_load_ms=" << report.initial_session_load_ms
-              << "\n"
-              << "session" << session_id
-              << "_session_reload_ms=" << report.session_reload_ms << "\n"
-              << "session" << session_id << "_prefill_ms=" << report.prefill_ms
-              << "\n"
-              << "session" << session_id
-              << "_save_state_ms=" << report.save_state_ms << "\n"
-              << "session" << session_id
-              << "_evict_context_ms=" << report.evict_context_ms << "\n"
-              << "session" << session_id
-              << "_evict_model_ms=" << report.evict_model_ms << "\n"
-              << "session" << session_id
-              << "_restore_state_ms=" << report.restore_state_ms << "\n"
-              << "session" << session_id
-              << "_resume_check_ms=" << report.resume_check_ms << "\n"
-              << "session" << session_id
-              << "_restore_generate_ms=" << report.restore_generate_ms << "\n";
+    std::cout
+        << "session" << session_id << "_prompt_tokens=" << report.prompt_tokens
+        << "\n"
+        << "session" << session_id
+        << "_prefill_chunks=" << report.prefill_chunks << "\n"
+        << "session" << session_id
+        << "_prefill_chunk_tokens=" << report.prefill_chunk_tokens << "\n"
+        << "session" << session_id
+        << "_session_run_count=" << report.session_run_count << "\n"
+        << "session" << session_id
+        << "_input_ids_bound_device=" << report.input_ids_bound_device << "\n"
+        << "session" << session_id
+        << "_attention_mask_bound_device=" << report.attention_mask_bound_device
+        << "\n"
+        << "session" << session_id
+        << "_position_ids_bound_device=" << report.position_ids_bound_device
+        << "\n"
+        << "session" << session_id
+        << "_kv_input_bound_device=" << report.kv_input_bound_device << "\n"
+        << "session" << session_id
+        << "_logits_output_bound_device=" << report.logits_output_bound_device
+        << "\n"
+        << "session" << session_id
+        << "_present_output_bound_device=" << report.present_output_bound_device
+        << "\n"
+        << "session" << session_id
+        << "_bound_cpu_input_count=" << report.bound_cpu_input_count << "\n"
+        << "session" << session_id
+        << "_bound_cuda_input_count=" << report.bound_cuda_input_count << "\n"
+        << "session" << session_id
+        << "_bound_cpu_output_count=" << report.bound_cpu_output_count << "\n"
+        << "session" << session_id
+        << "_bound_cuda_output_count=" << report.bound_cuda_output_count << "\n"
+        << "session" << session_id
+        << "_explicit_h2d_copies=" << report.explicit_host_to_device_copies
+        << "\n"
+        << "session" << session_id
+        << "_explicit_h2d_bytes=" << report.explicit_host_to_device_bytes
+        << "\n"
+        << "session" << session_id
+        << "_explicit_d2h_copies=" << report.explicit_device_to_host_copies
+        << "\n"
+        << "session" << session_id
+        << "_explicit_d2h_bytes=" << report.explicit_device_to_host_bytes
+        << "\n"
+        << "session" << session_id << "_logits_dtype=" << report.logits_dtype
+        << "\n"
+        << "session" << session_id
+        << "_logits_vocab_size=" << report.logits_vocab_size << "\n"
+        << "session" << session_id
+        << "_logits_finite_count=" << report.logits_finite_count << "\n"
+        << "session" << session_id
+        << "_logits_nan_count=" << report.logits_nan_count << "\n"
+        << "session" << session_id
+        << "_logits_pos_inf_count=" << report.logits_pos_inf_count << "\n"
+        << "session" << session_id
+        << "_logits_neg_inf_count=" << report.logits_neg_inf_count << "\n"
+        << "session" << session_id
+        << "_decode_valid=" << BoolText(report.decode_valid) << "\n"
+        << "session" << session_id
+        << "_position_ids_present=" << BoolText(report.position_ids_present)
+        << "\n"
+        << "session" << session_id
+        << "_kv_state_bytes=" << report.kv_state_bytes << "\n"
+        << "session" << session_id
+        << "_restored_kv_state_bytes=" << report.restored_kv_state_bytes << "\n"
+        << "session" << session_id
+        << "_baseline_next_token=" << report.baseline_next_token << "\n"
+        << "session" << session_id
+        << "_restored_next_token=" << report.restored_next_token << "\n"
+        << "session" << session_id
+        << "_resume_match=" << BoolText(report.resume_match) << "\n"
+        << "session" << session_id
+        << "_initial_session_load_ms=" << report.initial_session_load_ms << "\n"
+        << "session" << session_id
+        << "_session_reload_ms=" << report.session_reload_ms << "\n"
+        << "session" << session_id << "_prefill_ms=" << report.prefill_ms
+        << "\n"
+        << "session" << session_id << "_save_state_ms=" << report.save_state_ms
+        << "\n"
+        << "session" << session_id
+        << "_evict_context_ms=" << report.evict_context_ms << "\n"
+        << "session" << session_id
+        << "_evict_model_ms=" << report.evict_model_ms << "\n"
+        << "session" << session_id
+        << "_restore_state_ms=" << report.restore_state_ms << "\n"
+        << "session" << session_id
+        << "_resume_check_ms=" << report.resume_check_ms << "\n"
+        << "session" << session_id
+        << "_restore_generate_ms=" << report.restore_generate_ms << "\n";
     if (!report.generated_token_ids.empty() || report.generated_tokens > 0) {
       std::cout << "session" << session_id
                 << "_generated_tokens=" << report.generated_tokens << "\n"

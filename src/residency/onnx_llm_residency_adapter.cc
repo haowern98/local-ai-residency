@@ -152,6 +152,18 @@ void CountLogitValue(float value, OnnxLlmResidencyReport* report) {
   ++report->logits_finite_count;
 }
 
+void CountHostToDeviceCopy(std::size_t byte_count,
+                           OnnxLlmResidencyReport* report) {
+  ++report->explicit_host_to_device_copies;
+  report->explicit_host_to_device_bytes += byte_count;
+}
+
+void CountDeviceToHostCopy(std::size_t byte_count,
+                           OnnxLlmResidencyReport* report) {
+  ++report->explicit_device_to_host_copies;
+  report->explicit_device_to_host_bytes += byte_count;
+}
+
 bool ContainsSubsequence(const std::vector<int64_t>& values,
                          const std::vector<int64_t>& expected) {
   if (expected.empty() || values.size() < expected.size()) {
@@ -288,6 +300,7 @@ BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
         cudaMemcpy(dst, tensor.cache_buffer.data, tensor.cache_buffer.bytes,
                    cudaMemcpyDeviceToHost),
         "copy ONNX LLM KV cache to pinned host memory");
+    CountDeviceToHostCopy(tensor.cache_buffer.bytes, &report_);
     dst += tensor.cache_buffer.bytes;
   }
   snapshot_.full_state_bytes = bytes;
@@ -343,6 +356,7 @@ void OnnxLlmResidencyAdapter::RestoreState() {
         cudaMemcpy(tensor.cache_buffer.data, src, tensor.cache_buffer.bytes,
                    cudaMemcpyHostToDevice),
         "restore ONNX LLM KV cache from pinned host memory");
+    CountHostToDeviceCopy(tensor.cache_buffer.bytes, &report_);
     src += tensor.cache_buffer.bytes;
     copied += tensor.cache_buffer.bytes;
   }
@@ -607,11 +621,15 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
       cpu_memory_info, const_cast<int64_t*>(input_tokens.data()),
       input_tokens.size(), input_shape.data(), input_shape.size()));
   binding.BindInput(input_ids_name_.c_str(), input_values.back());
+  report_.input_ids_bound_device = "cpu";
+  ++report_.bound_cpu_input_count;
 
   input_values.push_back(Ort::Value::CreateTensor<int64_t>(
       cpu_memory_info, mask.data(), mask.size(), mask_shape.data(),
       mask_shape.size()));
   binding.BindInput(attention_mask_name_.c_str(), input_values.back());
+  report_.attention_mask_bound_device = "cpu";
+  ++report_.bound_cpu_input_count;
 
   if (!position_ids_name_.empty()) {
     std::vector<int64_t> positions(static_cast<std::size_t>(input_length));
@@ -622,6 +640,10 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
         cpu_memory_info, positions.data(), positions.size(), input_shape.data(),
         input_shape.size()));
     binding.BindInput(position_ids_name_.c_str(), input_values.back());
+    report_.position_ids_bound_device = "cpu";
+    ++report_.bound_cpu_input_count;
+  } else {
+    report_.position_ids_bound_device = "absent";
   }
 
   for (KvTensor& tensor : kv_tensors_) {
@@ -630,6 +652,8 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
         tensor.cache_shape.data(), tensor.cache_shape.size(),
         tensor.element_type));
     binding.BindInput(tensor.past_name.c_str(), input_values.back());
+    report_.kv_input_bound_device = "cuda";
+    ++report_.bound_cuda_input_count;
   }
 
   CudaBuffer logits_buffer;
@@ -640,6 +664,8 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
       cuda_memory_info, logits_buffer.data, logits_buffer.bytes,
       logits_shape.data(), logits_shape.size(), logits_element_type_));
   binding.BindOutput(logits_name_.c_str(), output_values.back());
+  report_.logits_output_bound_device = "cuda";
+  ++report_.bound_cuda_output_count;
 
   std::vector<KvTensor> present_tensors;
   present_tensors.reserve(kv_tensors_.size());
@@ -659,10 +685,13 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
         present.cache_shape.data(), present.cache_shape.size(),
         present.element_type));
     binding.BindOutput(present.present_name.c_str(), output_values.back());
+    report_.present_output_bound_device = "cuda";
+    ++report_.bound_cuda_output_count;
     present_tensors.push_back(std::move(present));
   }
 
   session_->Run(Ort::RunOptions{nullptr}, binding);
+  ++report_.session_run_count;
 
   const std::size_t logits_values =
       static_cast<std::size_t>(input_length * vocab_size_);
@@ -688,6 +717,7 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
         cudaMemcpy(host_logits.data(), logits_buffer.data, logits_buffer.bytes,
                    cudaMemcpyDeviceToHost),
         "copy ONNX LLM float16 logits to host");
+    CountDeviceToHostCopy(logits_buffer.bytes, &report_);
     for (int64_t i = 0; i < vocab_size_; ++i) {
       const float value = HalfToFloat(
           host_logits[last_token_offset + static_cast<std::size_t>(i)]);
@@ -707,6 +737,7 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
         cudaMemcpy(host_logits.data(), logits_buffer.data, logits_buffer.bytes,
                    cudaMemcpyDeviceToHost),
         "copy ONNX LLM float32 logits to host");
+    CountDeviceToHostCopy(logits_buffer.bytes, &report_);
     for (int64_t i = 0; i < vocab_size_; ++i) {
       const float value =
           host_logits[last_token_offset + static_cast<std::size_t>(i)];
