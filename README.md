@@ -17,6 +17,9 @@ The current adapters support:
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the current model
 compatibility matrix.
 
+Long-context CUDA smoke tests are documented in
+[docs/GPU_SMOKE_TESTS.md](docs/GPU_SMOKE_TESTS.md).
+
 ## Why This Exists
 
 Most local-AI launchers can unload one model before loading another. That frees
