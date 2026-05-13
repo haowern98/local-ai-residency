@@ -269,16 +269,14 @@ void LlamaResidencyAdapter::CheckModelReloadedSequenceRestore() {
       report_.baseline_next_token == report_.model_reloaded_sequence_next_token;
 }
 
-void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
-    const std::string& text, int max_tokens, const std::string& expected_text) {
-  Timer timer;
+std::string LlamaResidencyAdapter::GenerateContinuation(const std::string& text,
+                                                        int max_tokens) {
   if (max_tokens <= 0) {
     throw std::runtime_error("max_tokens must be positive");
   }
   if (context_ == nullptr) {
-    CreateContext();
+    throw std::runtime_error("cannot chat with llama session before load");
   }
-  RestoreFullState();
 
   std::vector<llama_token> continuation = TokenizeText(text,
                                                        /*add_special=*/false);
@@ -298,6 +296,17 @@ void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
 
   report_.generated_tokens = generated_tokens.size();
   report_.generated_text = DetokenizeTokens(generated_tokens);
+  return report_.generated_text;
+}
+
+void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
+    const std::string& text, int max_tokens, const std::string& expected_text) {
+  Timer timer;
+  if (context_ == nullptr) {
+    CreateContext();
+  }
+  RestoreFullState();
+  GenerateContinuation(text, max_tokens);
   report_.generated_contains_expected =
       !expected_text.empty() &&
       report_.generated_text.find(expected_text) != std::string::npos;
