@@ -70,6 +70,11 @@ struct LlamaResidencyReport {
   std::string generated_text;
 };
 
+struct LlamaChatMessage {
+  std::string role;
+  std::string content;
+};
+
 class LlamaResidencyAdapter : public BackendStateAdapter {
  public:
   explicit LlamaResidencyAdapter(LlamaResidencyOptions options);
@@ -91,6 +96,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckModelReloadedFullRestore();
   void CheckModelReloadedSequenceRestore();
   std::string GenerateContinuation(const std::string& text, int max_tokens);
+  std::string GenerateChatReply(const std::string& user_text, int max_tokens);
   void RestoreAndGenerateContinuation(const std::string& text, int max_tokens,
                                       const std::string& expected_text);
 
@@ -134,10 +140,12 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   ContextPtr MakeContext() const;
   std::vector<llama_token> TokenizePrompt() const;
   std::vector<llama_token> TokenizeText(const std::string& text,
-                                        bool add_special) const;
+                                        bool add_special,
+                                        bool parse_special = false) const;
   void DecodeTokens(const std::vector<llama_token>& tokens);
   llama_token GreedyToken() const;
   std::string DetokenizeTokens(const std::vector<llama_token>& tokens) const;
+  std::string ApplyChatTemplate(bool add_assistant) const;
   std::size_t RestoreFullState();
   std::size_t RestoreSequenceState();
   void ResetDecodePosition();
@@ -149,9 +157,13 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   const llama_vocab* vocab_ = nullptr;
   BackendStateSnapshot snapshot_;
   LlamaResidencyReport report_;
+  std::vector<LlamaChatMessage> chat_messages_;
+  std::vector<LlamaChatMessage> snapshot_chat_messages_;
   ResidencyState residency_state_ = ResidencyState::kUnloaded;
   llama_pos next_decode_position_ = 0;
   llama_pos snapshot_decode_position_ = 0;
+  int32_t chat_formatted_length_ = 0;
+  int32_t snapshot_chat_formatted_length_ = 0;
 };
 
 }  // namespace mosaicvram

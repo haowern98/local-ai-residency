@@ -338,7 +338,7 @@ void CliRuntime::ChatText(const std::string& text) {
     throw std::runtime_error("active session is not a llama session");
   }
   const std::string generated =
-      adapter->GenerateContinuation(text, kDefaultChatTokens);
+      adapter->GenerateChatReply(text, kDefaultChatTokens);
   std::cout << name << ": " << generated << "\n";
 #else
   (void)text;
