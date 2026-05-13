@@ -784,10 +784,10 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
   session_->Run(Ort::RunOptions{nullptr}, binding);
   ++report_.session_run_count;
 
-  const std::size_t logits_values =
-      static_cast<std::size_t>(input_length * vocab_size_);
   const std::size_t last_token_offset =
       static_cast<std::size_t>((input_length - 1) * vocab_size_);
+  const std::size_t last_token_byte_offset =
+      last_token_offset * TensorElementBytes(logits_element_type_);
   float best_logit = -std::numeric_limits<float>::infinity();
   int64_t best_token = -1;
   double checksum = 0.0;
@@ -803,15 +803,17 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
   }
 
   if (logits_element_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
-    std::vector<std::uint16_t> host_logits(logits_values);
+    const std::size_t row_values = static_cast<std::size_t>(vocab_size_);
+    std::vector<std::uint16_t> host_logits(row_values);
     MOSAICVRAM_CUDA_CHECK(
-        cudaMemcpy(host_logits.data(), logits_buffer.data, logits_buffer.bytes,
-                   cudaMemcpyDeviceToHost),
-        "copy ONNX LLM float16 logits to host");
-    CountDeviceToHostCopy(logits_buffer.bytes, &report_);
+        cudaMemcpy(host_logits.data(),
+                   static_cast<const std::uint8_t*>(logits_buffer.data) +
+                       last_token_byte_offset,
+                   row_values * kFloat16Bytes, cudaMemcpyDeviceToHost),
+        "copy ONNX LLM float16 last-token logits row to host");
+    CountDeviceToHostCopy(row_values * kFloat16Bytes, &report_);
     for (int64_t i = 0; i < vocab_size_; ++i) {
-      const float value = HalfToFloat(
-          host_logits[last_token_offset + static_cast<std::size_t>(i)]);
+      const float value = HalfToFloat(host_logits[static_cast<std::size_t>(i)]);
       CountLogitValue(value, &report_);
       if (!std::isfinite(value)) {
         continue;
@@ -823,15 +825,17 @@ OnnxLlmResidencyAdapter::RunDecodeStepWithControlInputs(
       }
     }
   } else if (logits_element_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-    std::vector<float> host_logits(logits_values);
+    const std::size_t row_values = static_cast<std::size_t>(vocab_size_);
+    std::vector<float> host_logits(row_values);
     MOSAICVRAM_CUDA_CHECK(
-        cudaMemcpy(host_logits.data(), logits_buffer.data, logits_buffer.bytes,
-                   cudaMemcpyDeviceToHost),
-        "copy ONNX LLM float32 logits to host");
-    CountDeviceToHostCopy(logits_buffer.bytes, &report_);
+        cudaMemcpy(host_logits.data(),
+                   static_cast<const std::uint8_t*>(logits_buffer.data) +
+                       last_token_byte_offset,
+                   row_values * kFloat32Bytes, cudaMemcpyDeviceToHost),
+        "copy ONNX LLM float32 last-token logits row to host");
+    CountDeviceToHostCopy(row_values * kFloat32Bytes, &report_);
     for (int64_t i = 0; i < vocab_size_; ++i) {
-      const float value =
-          host_logits[last_token_offset + static_cast<std::size_t>(i)];
+      const float value = host_logits[static_cast<std::size_t>(i)];
       CountLogitValue(value, &report_);
       if (!std::isfinite(value)) {
         continue;
