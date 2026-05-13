@@ -5,6 +5,7 @@
 #include "commands/alloc_smoke.h"
 #include "commands/residency_run.h"
 #include "commands/run_command.h"
+#include "commands/shell_command.h"
 
 #ifdef MOSAICVRAM_ENABLE_LLAMA
 #include "commands/llama_state_smoke.h"
@@ -25,6 +26,7 @@ void PrintUsage(std::string_view program_name) {
 #endif  // MOSAICVRAM_ENABLE_LLAMA
             << "  residency-run  Execute a residency plan\n"
             << "  run          Run a real local-AI backend\n"
+            << "  shell        Start the interactive residency shell\n"
             << "  version    Print MosaicVRAM version\n";
 }
 
@@ -52,6 +54,9 @@ int Run(int argc, char** argv) {
 #endif  // MOSAICVRAM_ENABLE_LLAMA
   if (command == "run") {
     return RunBackendCommand(argc - 2, argv + 2);
+  }
+  if (command == "shell") {
+    return RunShellCommand(argc - 2, argv + 2);
   }
 
   std::cerr << "Unknown command: " << command << "\n";

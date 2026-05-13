@@ -24,6 +24,23 @@ ResidencyControllerResult ResidencyController::RegisterAdapter(
   return Ok();
 }
 
+ResidencyControllerResult ResidencyController::UnregisterAdapter(
+    MosaicSessionId session_id) {
+  const auto it = adapters_.find(session_id);
+  if (it == adapters_.end()) {
+    return Error("unknown session id");
+  }
+  if (it->second != nullptr &&
+      it->second->residency_state() != ResidencyState::kModelEvicted) {
+    return Error("cannot unregister a session before evicting its model");
+  }
+  adapters_.erase(it);
+  if (gpu_owner_ == session_id) {
+    gpu_owner_ = 0;
+  }
+  return Ok();
+}
+
 ResidencyControllerResult ResidencyController::SaveSession(
     MosaicSessionId session_id) {
   BackendStateAdapter* adapter = FindAdapter(session_id);

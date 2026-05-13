@@ -43,11 +43,13 @@ add_executable(
   src/commands/alloc_smoke.cc
   src/commands/residency_run.cc
   src/commands/run_command.cc
+  src/commands/shell_command.cc
   src/cuda/cuda_device.cc
   src/cuda/cuda_error.cc
   src/cuda/cuda_stream.cc
   src/main.cc
   src/residency/residency_controller.cc
+  src/runtime/config_line.cc
   src/util/timer.cc)
 
 if(MOSAICVRAM_ENABLE_ONNX)

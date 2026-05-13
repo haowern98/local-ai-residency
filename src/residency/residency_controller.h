@@ -21,6 +21,7 @@ class ResidencyController {
   ResidencyController& operator=(const ResidencyController&) = delete;
 
   ResidencyControllerResult RegisterAdapter(BackendStateAdapter* adapter);
+  ResidencyControllerResult UnregisterAdapter(MosaicSessionId session_id);
   ResidencyControllerResult SaveSession(MosaicSessionId session_id);
   ResidencyControllerResult EvictContext(MosaicSessionId session_id);
   ResidencyControllerResult EvictModel(MosaicSessionId session_id);

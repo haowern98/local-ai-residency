@@ -17,6 +17,7 @@
 
 #include "residency/backend_state_adapter.h"
 #include "residency/residency_controller.h"
+#include "runtime/config_line.h"
 
 #ifdef MOSAICVRAM_ENABLE_LLAMA
 #include "residency/llama_residency_adapter.h"
@@ -83,47 +84,6 @@ bool ParseInt64(std::string_view text, int64_t* value) {
   }
   *value = parsed;
   return true;
-}
-
-std::string Trim(std::string_view text) {
-  std::size_t begin = 0;
-  while (begin < text.size() &&
-         std::isspace(static_cast<unsigned char>(text[begin]))) {
-    ++begin;
-  }
-  std::size_t end = text.size();
-  while (end > begin &&
-         std::isspace(static_cast<unsigned char>(text[end - 1]))) {
-    --end;
-  }
-  return std::string(text.substr(begin, end - begin));
-}
-
-std::vector<std::string> TokenizePlanLine(const std::string& line) {
-  std::vector<std::string> tokens;
-  std::string current;
-  bool in_quotes = false;
-  for (char c : line) {
-    if (c == '"') {
-      in_quotes = !in_quotes;
-      continue;
-    }
-    if (!in_quotes && c == '#') {
-      break;
-    }
-    if (!in_quotes && std::isspace(static_cast<unsigned char>(c))) {
-      if (!current.empty()) {
-        tokens.push_back(current);
-        current.clear();
-      }
-      continue;
-    }
-    current.push_back(c);
-  }
-  if (!current.empty()) {
-    tokens.push_back(current);
-  }
-  return tokens;
 }
 
 const std::string& RequiredValue(const PlanLine& line, const std::string& key) {
@@ -406,25 +366,21 @@ std::vector<PlanLine> LoadPlan(const std::string& path) {
       continue;
     }
 
-    const std::vector<std::string> tokens = TokenizePlanLine(trimmed);
-    if (tokens.empty()) {
+    const ConfigLine parsed = ParseConfigLine(trimmed, line_number);
+    if (parsed.kind.empty()) {
       continue;
+    }
+    if (!parsed.positional.empty()) {
+      std::ostringstream message;
+      message << "line " << line_number
+              << " has unexpected positional token in residency plan";
+      throw std::runtime_error(message.str());
     }
 
     PlanLine line;
-    line.kind = tokens.front();
-    line.line_number = line_number;
-    for (std::size_t i = 1; i < tokens.size(); ++i) {
-      const std::size_t equals_pos = tokens[i].find('=');
-      if (equals_pos == std::string::npos || equals_pos == 0 ||
-          equals_pos + 1 >= tokens[i].size()) {
-        std::ostringstream message;
-        message << "line " << line_number << " has invalid key=value token";
-        throw std::runtime_error(message.str());
-      }
-      line.values[tokens[i].substr(0, equals_pos)] =
-          tokens[i].substr(equals_pos + 1);
-    }
+    line.kind = parsed.kind;
+    line.values = parsed.values;
+    line.line_number = parsed.line_number;
     lines.push_back(std::move(line));
   }
   return lines;

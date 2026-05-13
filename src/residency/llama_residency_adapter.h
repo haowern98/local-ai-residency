@@ -90,6 +90,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckRecreatedSequenceRestore();
   void CheckModelReloadedFullRestore();
   void CheckModelReloadedSequenceRestore();
+  std::string GenerateContinuation(const std::string& text, int max_tokens);
   void RestoreAndGenerateContinuation(const std::string& text, int max_tokens,
                                       const std::string& expected_text);
 

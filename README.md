@@ -131,6 +131,16 @@ The main publishable interface is `residency-run`:
 mosaicvram.exe residency-run --plan path\to\plan.txt
 ```
 
+For interactive inspection and manual backend switching, use the shell:
+
+```text
+mosaicvram.exe shell --config sessions.txt
+```
+
+The shell uses session definitions with the same model, tokenizer, context, and
+device fields as residency plans, but it does not modify plan files. See
+[docs/SHELL.md](docs/SHELL.md).
+
 A plan declares sessions and then executes lifecycle steps:
 
 ```text
