@@ -131,8 +131,13 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
     void operator()(llama_context* context) const;
   };
 
+  struct SamplerDeleter {
+    void operator()(llama_sampler* sampler) const;
+  };
+
   using ModelPtr = std::unique_ptr<llama_model, ModelDeleter>;
   using ContextPtr = std::unique_ptr<llama_context, ContextDeleter>;
+  using SamplerPtr = std::unique_ptr<llama_sampler, SamplerDeleter>;
 
   static void QuietLog(ggml_log_level level, const char* text, void* user_data);
 
@@ -144,6 +149,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
                                         bool parse_special = false) const;
   void DecodeTokens(const std::vector<llama_token>& tokens);
   llama_token GreedyToken() const;
+  llama_token SampleToken();
   std::string DetokenizeTokens(const std::vector<llama_token>& tokens) const;
   std::string ApplyChatTemplate(bool add_assistant) const;
   std::size_t RestoreFullState();
@@ -154,6 +160,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   BackendLifetime backend_lifetime_;
   ModelPtr model_;
   ContextPtr context_;
+  SamplerPtr chat_sampler_;
   const llama_vocab* vocab_ = nullptr;
   BackendStateSnapshot snapshot_;
   LlamaResidencyReport report_;

@@ -104,6 +104,13 @@ void LlamaResidencyAdapter::ContextDeleter::operator()(
   }
 }
 
+void LlamaResidencyAdapter::SamplerDeleter::operator()(
+    llama_sampler* sampler) const {
+  if (sampler != nullptr) {
+    llama_sampler_free(sampler);
+  }
+}
+
 LlamaResidencyAdapter::LlamaResidencyAdapter(LlamaResidencyOptions options)
     : options_(std::move(options)) {
   snapshot_.session_id = options_.session_id;
@@ -137,6 +144,17 @@ void LlamaResidencyAdapter::CreateContext() {
     throw std::runtime_error("cannot create llama context without model");
   }
   context_ = MakeContext();
+  llama_sampler_chain_params sampler_params =
+      llama_sampler_chain_default_params();
+  chat_sampler_.reset(llama_sampler_chain_init(sampler_params));
+  if (chat_sampler_ == nullptr) {
+    throw std::runtime_error("failed to create llama sampler chain");
+  }
+  llama_sampler_chain_add(chat_sampler_.get(),
+                          llama_sampler_init_min_p(0.05f, 1));
+  llama_sampler_chain_add(chat_sampler_.get(), llama_sampler_init_temp(0.8f));
+  llama_sampler_chain_add(chat_sampler_.get(),
+                          llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
   ResetDecodePosition();
   chat_messages_.clear();
   chat_formatted_length_ = 0;
@@ -236,6 +254,7 @@ void LlamaResidencyAdapter::CheckSameContextClearAndRestore() {
 
 void LlamaResidencyAdapter::EvictContext() {
   Timer timer;
+  chat_sampler_.reset();
   context_.reset();
   residency_state_ = model_ == nullptr ? ResidencyState::kModelEvicted
                                        : ResidencyState::kContextEvicted;
@@ -264,6 +283,7 @@ void LlamaResidencyAdapter::CheckRecreatedSequenceRestore() {
 
 void LlamaResidencyAdapter::EvictModel() {
   Timer timer;
+  chat_sampler_.reset();
   context_.reset();
   model_.reset();
   vocab_ = nullptr;
@@ -322,7 +342,7 @@ std::string LlamaResidencyAdapter::GenerateContinuation(const std::string& text,
   std::vector<llama_token> generated_tokens;
   generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
   for (int i = 0; i < max_tokens; ++i) {
-    const llama_token token = GreedyToken();
+    const llama_token token = SampleToken();
     if (llama_vocab_is_eog(vocab_, token)) {
       break;
     }
@@ -588,6 +608,16 @@ std::string LlamaResidencyAdapter::DetokenizeTokens(
   }
   text.resize(static_cast<std::size_t>(chars));
   return text;
+}
+
+llama_token LlamaResidencyAdapter::SampleToken() {
+  if (context_ == nullptr || chat_sampler_ == nullptr) {
+    throw std::runtime_error("llama sampler is unavailable");
+  }
+  const llama_token token =
+      llama_sampler_sample(chat_sampler_.get(), context_.get(), -1);
+  llama_sampler_accept(chat_sampler_.get(), token);
+  return token;
 }
 
 std::string LlamaResidencyAdapter::ApplyChatTemplate(bool add_assistant) const {

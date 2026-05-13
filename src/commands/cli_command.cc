@@ -24,7 +24,7 @@
 namespace mosaicvram {
 namespace {
 
-constexpr int kDefaultChatTokens = 128;
+constexpr int kDefaultChatTokens = 512;
 
 struct CliOptions {
   std::string config_path;
