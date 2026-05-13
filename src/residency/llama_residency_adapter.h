@@ -7,6 +7,7 @@
 #include <llama.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +25,10 @@ struct LlamaResidencyOptions {
   int gpu_layers = -1;
   int device_index = 0;
   int threads = 8;
+  int chat_max_tokens = 512;
+  float chat_temperature = 0.8f;
+  float chat_min_p = 0.05f;
+  uint32_t chat_seed = LLAMA_DEFAULT_SEED;
   llama_seq_id sequence_id = 0;
 };
 

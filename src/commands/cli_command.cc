@@ -1,6 +1,8 @@
 #include "commands/cli_command.h"
 
+#include <cerrno>
 #include <charconv>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -23,8 +25,6 @@
 
 namespace mosaicvram {
 namespace {
-
-constexpr int kDefaultChatTokens = 512;
 
 struct CliOptions {
   std::string config_path;
@@ -55,6 +55,30 @@ bool ParseInt(std::string_view text, int* value) {
   return true;
 }
 
+bool ParseUint32(std::string_view text, uint32_t* value) {
+  uint32_t parsed = 0;
+  const char* begin = text.data();
+  const char* end = begin + text.size();
+  const auto result = std::from_chars(begin, end, parsed);
+  if (result.ec != std::errc() || result.ptr != end) {
+    return false;
+  }
+  *value = parsed;
+  return true;
+}
+
+bool ParseFloat(std::string_view text, float* value) {
+  std::string copy(text);
+  char* end = nullptr;
+  errno = 0;
+  const float parsed = std::strtof(copy.c_str(), &end);
+  if (errno != 0 || end == copy.c_str() || *end != '\0') {
+    return false;
+  }
+  *value = parsed;
+  return true;
+}
+
 std::string OptionalString(const SessionSpec& spec, const std::string& key,
                            const std::string& default_value) {
   const auto it = spec.values.find(key);
@@ -79,6 +103,32 @@ int OptionalInt(const SessionSpec& spec, const std::string& key,
   int parsed = 0;
   if (!ParseInt(it->second, &parsed)) {
     throw std::runtime_error("invalid integer for " + key);
+  }
+  return parsed;
+}
+
+uint32_t OptionalUint32(const SessionSpec& spec, const std::string& key,
+                        uint32_t default_value) {
+  const auto it = spec.values.find(key);
+  if (it == spec.values.end()) {
+    return default_value;
+  }
+  uint32_t parsed = 0;
+  if (!ParseUint32(it->second, &parsed)) {
+    throw std::runtime_error("invalid unsigned integer for " + key);
+  }
+  return parsed;
+}
+
+float OptionalFloat(const SessionSpec& spec, const std::string& key,
+                    float default_value) {
+  const auto it = spec.values.find(key);
+  if (it == spec.values.end()) {
+    return default_value;
+  }
+  float parsed = 0.0f;
+  if (!ParseFloat(it->second, &parsed)) {
+    throw std::runtime_error("invalid float for " + key);
   }
   return parsed;
 }
@@ -360,7 +410,7 @@ void CliRuntime::ChatText(const std::string& text) {
     throw std::runtime_error("active session is not a llama session");
   }
   const std::string generated =
-      adapter->GenerateChatReply(text, kDefaultChatTokens);
+      adapter->GenerateChatReply(text, adapter->options().chat_max_tokens);
   std::cout << name << ": " << generated << "\n";
 #else
   (void)text;
@@ -449,6 +499,22 @@ void CliRuntime::RegisterAdapter(CliSession* session) {
   options.device_index =
       OptionalInt(session->spec, "device", options.device_index);
   options.threads = OptionalInt(session->spec, "threads", options.threads);
+  options.chat_max_tokens =
+      OptionalInt(session->spec, "max_tokens", options.chat_max_tokens);
+  options.chat_temperature =
+      OptionalFloat(session->spec, "temp", options.chat_temperature);
+  options.chat_min_p =
+      OptionalFloat(session->spec, "min_p", options.chat_min_p);
+  options.chat_seed = OptionalUint32(session->spec, "seed", options.chat_seed);
+  if (options.chat_max_tokens <= 0) {
+    throw std::runtime_error("max_tokens must be greater than zero");
+  }
+  if (options.chat_temperature < 0.0f) {
+    throw std::runtime_error("temp must be greater than or equal to zero");
+  }
+  if (options.chat_min_p < 0.0f || options.chat_min_p > 1.0f) {
+    throw std::runtime_error("min_p must be between 0 and 1");
+  }
   options.sequence_id =
       OptionalInt(session->spec, "seq_id", options.sequence_id);
   session->adapter = std::make_unique<LlamaResidencyAdapter>(options);

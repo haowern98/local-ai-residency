@@ -20,7 +20,7 @@ mosaicvram.exe cli --config path\to\sessions.txt
 Edit `sessions.txt` manually. The first CLI phase supports llama.cpp sessions:
 
 ```text
-session llama backend=llama model="C:\models\qwen.gguf" ctx=16384 batch=512 gpu_layers=-1 device=0
+session llama backend=llama model="C:\models\qwen.gguf" ctx=16384 batch=512 gpu_layers=-1 device=0 max_tokens=512 temp=0.8 min_p=0.05 seed=1234
 ```
 
 After editing the file while the CLI is open, run:
@@ -65,3 +65,6 @@ context. `/restore` reloads the model if needed and restores that saved snapshot
 `/reset` clears the live context and chat history while keeping the current model
 loaded. It does not delete the saved snapshot, so `/restore` can still return to
 the last `/save`. Saved state is process-local; it is not written to disk.
+
+Chat generation options are read from `sessions.txt`. If omitted, the defaults
+are `max_tokens=512`, `temp=0.8`, `min_p=0.05`, and the llama.cpp default seed.

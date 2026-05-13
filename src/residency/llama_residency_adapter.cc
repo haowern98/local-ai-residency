@@ -151,10 +151,11 @@ void LlamaResidencyAdapter::CreateContext() {
     throw std::runtime_error("failed to create llama sampler chain");
   }
   llama_sampler_chain_add(chat_sampler_.get(),
-                          llama_sampler_init_min_p(0.05f, 1));
-  llama_sampler_chain_add(chat_sampler_.get(), llama_sampler_init_temp(0.8f));
+                          llama_sampler_init_min_p(options_.chat_min_p, 1));
   llama_sampler_chain_add(chat_sampler_.get(),
-                          llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+                          llama_sampler_init_temp(options_.chat_temperature));
+  llama_sampler_chain_add(chat_sampler_.get(),
+                          llama_sampler_init_dist(options_.chat_seed));
   ResetDecodePosition();
   chat_messages_.clear();
   chat_formatted_length_ = 0;
