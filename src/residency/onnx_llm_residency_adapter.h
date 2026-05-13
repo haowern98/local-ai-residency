@@ -22,6 +22,7 @@ struct OnnxLlmResidencyOptions {
   int prefill_chunk_tokens = 512;
   int device_index = 0;
   std::string control_input_device = "cpu";
+  std::string restore_copy_mode = "sync";
 };
 
 struct OnnxLlmResidencyReport {
@@ -60,6 +61,9 @@ struct OnnxLlmResidencyReport {
   std::size_t kv_state_bytes = 0;
   std::size_t restored_kv_state_bytes = 0;
   std::size_t generated_tokens = 0;
+  std::string restore_copy_mode;
+  bool restore_async_copy_used = false;
+  std::size_t restore_stream_synchronize_count = 0;
   std::string control_input_preferred_device;
   std::string control_input_actual_device;
   std::string input_ids_bound_device;

@@ -10,6 +10,7 @@ if "%LLAMA_BATCH%"=="" set "LLAMA_BATCH=512"
 if "%LLAMA_GPU_LAYERS%"=="" set "LLAMA_GPU_LAYERS=-1"
 if "%ONNX_PREFILL_CHUNK%"=="" set "ONNX_PREFILL_CHUNK=512"
 if "%ONNX_CONTROL_INPUT_DEVICE%"=="" set "ONNX_CONTROL_INPUT_DEVICE=cpu"
+if "%ONNX_RESTORE_COPY_MODE%"=="" set "ONNX_RESTORE_COPY_MODE=sync"
 
 if "%1"=="" (
   echo Usage: tests\run_gpu_smoke.bat llama^|onnx^|mixed
@@ -63,6 +64,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$text = $text.Replace('{{ONNX_TOKENIZER}}', '%ONNX_TOKENIZER%'); " ^
   "$text = $text.Replace('{{ONNX_PREFILL_CHUNK}}', '%ONNX_PREFILL_CHUNK%'); " ^
   "$text = $text.Replace('{{ONNX_CONTROL_INPUT_DEVICE}}', '%ONNX_CONTROL_INPUT_DEVICE%'); " ^
+  "$text = $text.Replace('{{ONNX_RESTORE_COPY_MODE}}', '%ONNX_RESTORE_COPY_MODE%'); " ^
   "$text = $text.Replace('{{DEVICE}}', '%DEVICE%'); " ^
   "$text = $text.Replace('{{THREADS}}', '%THREADS%'); " ^
   "Set-Content -LiteralPath '%PLAN%' -Value $text -Encoding ASCII"

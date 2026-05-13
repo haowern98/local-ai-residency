@@ -492,6 +492,8 @@ std::unique_ptr<BackendStateAdapter> CreateAdapter(const PlanLine& line) {
     options.device_index = OptionalInt(line, "device", options.device_index);
     options.control_input_device = OptionalString(line, "control_input_device",
                                                   options.control_input_device);
+    options.restore_copy_mode =
+        OptionalString(line, "restore_copy_mode", options.restore_copy_mode);
     return std::make_unique<OnnxLlmResidencyAdapter>(std::move(options));
   }
 #endif  // MOSAICVRAM_ENABLE_ONNX
@@ -724,6 +726,12 @@ void PrintAdapterReport(MosaicSessionId session_id,
         << "_active_kv_device_bytes=" << report.active_kv_device_bytes << "\n"
         << "session" << session_id
         << "_peak_kv_device_bytes=" << report.peak_kv_device_bytes << "\n"
+        << "session" << session_id
+        << "_restore_copy_mode=" << report.restore_copy_mode << "\n"
+        << "session" << session_id << "_restore_async_copy_used="
+        << BoolText(report.restore_async_copy_used) << "\n"
+        << "session" << session_id << "_restore_stream_synchronize_count="
+        << report.restore_stream_synchronize_count << "\n"
         << "session" << session_id
         << "_input_ids_bound_device=" << report.input_ids_bound_device << "\n"
         << "session" << session_id

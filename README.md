@@ -209,6 +209,10 @@ The ONNX LLM report also includes CUDA binding and allocation diagnostics so
 the active KV-cache device residency path can be measured without adding probe
 commands.
 
+ONNX LLM sessions accept `restore_copy_mode=sync|async`. The default is `sync`.
+`async` restores pinned host KV snapshots to CUDA buffers on a nonblocking CUDA
+stream and synchronizes once after the restore copies are queued.
+
 ONNX LLM sessions can accept `prompt=` or `prompt_file=` when the model folder
 provides a Hugging Face `tokenizer.json`:
 

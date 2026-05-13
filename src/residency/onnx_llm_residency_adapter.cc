@@ -13,12 +13,14 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
 
 #include "cuda/cuda_error.h"
+#include "cuda/cuda_stream.h"
 #include "util/timer.h"
 
 namespace mosaicvram {
@@ -247,6 +249,11 @@ void OnnxLlmResidencyAdapter::Load() {
     throw std::runtime_error(
         "ONNX LLM control_input_device must be cpu or cuda");
   }
+  if (options_.restore_copy_mode != "sync" &&
+      options_.restore_copy_mode != "async") {
+    throw std::runtime_error(
+        "ONNX LLM restore_copy_mode must be sync or async");
+  }
   MOSAICVRAM_CUDA_CHECK(cudaSetDevice(options_.device_index),
                         "set ONNX LLM CUDA device");
 
@@ -350,6 +357,12 @@ void OnnxLlmResidencyAdapter::RestoreState() {
   cache_length_ = snapshot_cache_length_;
   std::uint8_t* src = snapshot_.full_state.data();
   std::size_t copied = 0;
+  report_.restore_copy_mode = options_.restore_copy_mode;
+  report_.restore_async_copy_used = options_.restore_copy_mode == "async";
+  std::unique_ptr<CudaStream> restore_stream;
+  if (report_.restore_async_copy_used) {
+    restore_stream = std::make_unique<CudaStream>();
+  }
   for (KvTensor& tensor : kv_tensors_) {
     std::vector<int64_t> shape = tensor.base_shape;
     shape[0] = 1;
@@ -359,13 +372,25 @@ void OnnxLlmResidencyAdapter::RestoreState() {
         &tensor.cache_buffer,
         ElementCount(shape) * TensorElementBytes(tensor.element_type),
         CudaBufferKind::kKvCache);
-    MOSAICVRAM_CUDA_CHECK(
-        cudaMemcpy(tensor.cache_buffer.data, src, tensor.cache_buffer.bytes,
-                   cudaMemcpyHostToDevice),
-        "restore ONNX LLM KV cache from pinned host memory");
+    if (restore_stream != nullptr) {
+      MOSAICVRAM_CUDA_CHECK(
+          cudaMemcpyAsync(tensor.cache_buffer.data, src,
+                          tensor.cache_buffer.bytes, cudaMemcpyHostToDevice,
+                          restore_stream->get()),
+          "async restore ONNX LLM KV cache from pinned host memory");
+    } else {
+      MOSAICVRAM_CUDA_CHECK(
+          cudaMemcpy(tensor.cache_buffer.data, src, tensor.cache_buffer.bytes,
+                     cudaMemcpyHostToDevice),
+          "restore ONNX LLM KV cache from pinned host memory");
+    }
     CountHostToDeviceCopy(tensor.cache_buffer.bytes, &report_);
     src += tensor.cache_buffer.bytes;
     copied += tensor.cache_buffer.bytes;
+  }
+  if (restore_stream != nullptr) {
+    restore_stream->Synchronize();
+    ++report_.restore_stream_synchronize_count;
   }
   report_.restored_kv_state_bytes = copied;
   residency_state_ = ResidencyState::kResident;

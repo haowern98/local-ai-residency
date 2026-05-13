@@ -79,6 +79,7 @@ $env:LLAMA_BATCH = "512"
 $env:LLAMA_GPU_LAYERS = "-1"
 $env:ONNX_PREFILL_CHUNK = "512"
 $env:ONNX_CONTROL_INPUT_DEVICE = "cpu"
+$env:ONNX_RESTORE_COPY_MODE = "sync"
 ```
 
 ## Running Tests
@@ -196,6 +197,9 @@ sessionN_kv_cache_allocation_count
 sessionN_kv_cache_allocation_bytes
 sessionN_active_kv_device_bytes
 sessionN_peak_kv_device_bytes
+sessionN_restore_copy_mode
+sessionN_restore_async_copy_used
+sessionN_restore_stream_synchronize_count
 sessionN_logits_dtype
 sessionN_logits_vocab_size
 sessionN_logits_finite_count
