@@ -184,6 +184,7 @@ class ShellRuntime {
   const ShellSession* Find(const std::string& name) const;
   void EnsureValid(const ShellSession& session) const;
   void DetachEvictedAdapter(ShellSession* session);
+  void EnsureChatReady(const std::string& name, ShellSession* session);
   void RebuildAdapter(ShellSession* session, const std::string& prompt);
 
   std::map<std::string, ShellSession> sessions_;
@@ -393,10 +394,7 @@ void ShellRuntime::Chat(const std::string& name, const std::string& text,
                         int max_tokens) {
   ShellSession* session = FindMutable(name);
   EnsureValid(*session);
-  if (session->adapter == nullptr ||
-      session->adapter->residency_state() == ResidencyState::kUnloaded) {
-    Load(name);
-  }
+  EnsureChatReady(name, session);
 #ifdef MOSAICVRAM_ENABLE_LLAMA
   if (session->spec.values["backend"] == "llama") {
     const std::string generated =
@@ -526,6 +524,40 @@ void ShellRuntime::DetachEvictedAdapter(ShellSession* session) {
     throw std::runtime_error(result.error_message);
   }
   session->adapter.reset();
+}
+
+void ShellRuntime::EnsureChatReady(const std::string& name,
+                                   ShellSession* session) {
+  if (session->adapter == nullptr ||
+      session->adapter->residency_state() == ResidencyState::kUnloaded) {
+    Load(name);
+    return;
+  }
+
+  const ResidencyState state = session->adapter->residency_state();
+#ifdef MOSAICVRAM_ENABLE_LLAMA
+  if (session->spec.values["backend"] == "llama") {
+    auto* adapter =
+        dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
+    if (state == ResidencyState::kModelEvicted) {
+      adapter->ReloadModel();
+      adapter->CreateContext();
+      std::cout << "reloaded " << name << "\n";
+      return;
+    }
+    if (state == ResidencyState::kContextEvicted) {
+      adapter->CreateContext();
+      std::cout << "recreated context " << name << "\n";
+      return;
+    }
+  }
+#endif  // MOSAICVRAM_ENABLE_LLAMA
+
+  if (state == ResidencyState::kModelEvicted ||
+      state == ResidencyState::kContextEvicted) {
+    throw std::runtime_error(
+        "session is evicted; use reload and restore first");
+  }
 }
 
 void ShellRuntime::RebuildAdapter(ShellSession* session,
