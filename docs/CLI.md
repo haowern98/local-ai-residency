@@ -40,6 +40,7 @@ After editing the file while the CLI is open, run:
 /save [session]
 /evict [session]
 /restore [session]
+/reset [session]
 /reload-config
 /exit
 ```
@@ -61,4 +62,6 @@ llama> /exit
 
 `/save` overwrites the session's in-memory snapshot with the current live model
 context. `/restore` reloads the model if needed and restores that saved snapshot.
-Saved state is process-local; it is not written to disk.
+`/reset` clears the live context and chat history while keeping the current model
+loaded. It does not delete the saved snapshot, so `/restore` can still return to
+the last `/save`. Saved state is process-local; it is not written to disk.

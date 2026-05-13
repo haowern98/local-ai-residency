@@ -97,6 +97,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckModelReloadedSequenceRestore();
   std::string GenerateContinuation(const std::string& text, int max_tokens);
   std::string GenerateChatReply(const std::string& user_text, int max_tokens);
+  void ResetConversation();
   void RestoreAndGenerateContinuation(const std::string& text, int max_tokens,
                                       const std::string& expected_text);
 

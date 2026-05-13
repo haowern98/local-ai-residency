@@ -121,6 +121,7 @@ void PrintHelp() {
             << "  /save [session]\n"
             << "  /evict [session]\n"
             << "  /restore [session]\n"
+            << "  /reset [session]\n"
             << "  /reload-config\n"
             << "  /exit\n";
 }
@@ -165,6 +166,7 @@ class CliRuntime {
   void Save(const std::string& name);
   void Evict(const std::string& name);
   void Restore(const std::string& name);
+  void Reset(const std::string& name);
   void ChatText(const std::string& text);
 
   std::string ResolveName(const std::vector<std::string>& positional) const;
@@ -326,6 +328,26 @@ void CliRuntime::Restore(const std::string& name) {
   std::cout << "restored " << name << "\n";
 }
 
+void CliRuntime::Reset(const std::string& name) {
+  CliSession* session = FindMutable(name);
+  EnsureValid(*session);
+  if (session->adapter == nullptr) {
+    std::cout << "reset " << name << "\n";
+    return;
+  }
+
+#ifdef MOSAICVRAM_ENABLE_LLAMA
+  auto* adapter = dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
+  if (adapter == nullptr) {
+    throw std::runtime_error("active session is not a llama session");
+  }
+  adapter->ResetConversation();
+  std::cout << "reset " << name << "\n";
+#else
+  throw std::runtime_error("CLI reset requires a build with llama.cpp enabled");
+#endif  // MOSAICVRAM_ENABLE_LLAMA
+}
+
 void CliRuntime::ChatText(const std::string& text) {
   const std::string name = ResolveName({});
   CliSession* session = FindMutable(name);
@@ -485,6 +507,10 @@ void ExecuteCommand(const ConfigLine& line, CliRuntime* runtime,
   }
   if (line.kind == "/restore") {
     runtime->Restore(runtime->ResolveName(line.positional));
+    return;
+  }
+  if (line.kind == "/reset") {
+    runtime->Reset(runtime->ResolveName(line.positional));
     return;
   }
   throw std::runtime_error("unknown command: " + line.kind);

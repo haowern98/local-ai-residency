@@ -252,6 +252,18 @@ void LlamaResidencyAdapter::CheckSameContextClearAndRestore() {
       report_.baseline_next_token == report_.same_context_restore_next_token;
 }
 
+void LlamaResidencyAdapter::ResetConversation() {
+  if (context_ != nullptr) {
+    llama_memory_clear(llama_get_memory(context_.get()), /*data=*/true);
+  }
+  if (chat_sampler_ != nullptr) {
+    llama_sampler_reset(chat_sampler_.get());
+  }
+  ResetDecodePosition();
+  chat_messages_.clear();
+  chat_formatted_length_ = 0;
+}
+
 void LlamaResidencyAdapter::EvictContext() {
   Timer timer;
   chat_sampler_.reset();
