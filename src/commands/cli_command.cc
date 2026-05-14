@@ -435,6 +435,8 @@ void CliRuntime::Load(const std::string& name) {
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
   EnsureLoaded(name, session);
+  active_session_ = name;
+  chat_mode_ = true;
 }
 
 void CliRuntime::Save(const std::string& name) {
@@ -872,7 +874,7 @@ int RunCliCommand(int argc, char** argv) {
       } else if (runtime.chat_mode()) {
         runtime.ChatText(trimmed);
       } else {
-        std::cout << "error: enter /chat first\n";
+        std::cout << "error: use /load <session> first\n";
       }
     } catch (const std::exception& error) {
       std::cout << "error: " << error.what() << "\n";
