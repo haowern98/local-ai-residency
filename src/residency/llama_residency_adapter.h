@@ -159,6 +159,7 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   llama_token GreedyToken() const;
   llama_token SampleToken();
   std::string DetokenizeTokens(const std::vector<llama_token>& tokens) const;
+  std::string ResolveChatTemplate() const;
   std::string ApplyChatTemplate(bool add_assistant) const;
   std::size_t RestoreFullState();
   std::size_t RestoreSequenceState();
@@ -179,6 +180,8 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   llama_pos snapshot_decode_position_ = 0;
   int32_t chat_formatted_length_ = 0;
   int32_t snapshot_chat_formatted_length_ = 0;
+  mutable bool chat_template_resolved_ = false;
+  mutable std::string resolved_chat_template_;
 };
 
 }  // namespace mosaicvram

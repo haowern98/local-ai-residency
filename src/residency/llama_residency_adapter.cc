@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -71,6 +72,51 @@ std::size_t FindFirstStopString(std::string_view text,
     }
   }
   return first;
+}
+
+bool CanApplyChatTemplate(const char* tmpl) {
+  const llama_chat_message messages[1] = {{"user", "hello"}};
+  return llama_chat_apply_template(tmpl, messages, 1, /*add_ass=*/true, nullptr,
+                                   0) > 0;
+}
+
+void AddUniqueTemplate(std::vector<const char*>* templates,
+                       const char* candidate) {
+  if (std::find(templates->begin(), templates->end(), candidate) ==
+      templates->end()) {
+    templates->push_back(candidate);
+  }
+}
+
+std::vector<const char*> FallbackChatTemplates(const char* model_template) {
+  std::vector<const char*> templates;
+  const std::string_view text = model_template == nullptr
+                                    ? std::string_view()
+                                    : std::string_view(model_template);
+
+  if (text.find("<start_of_turn>") != std::string_view::npos ||
+      text.find("start_of_turn") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "gemma");
+  }
+  if (text.find("<|start_header_id|>") != std::string_view::npos ||
+      text.find("<|eot_id|>") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "llama3");
+  }
+  if (text.find("<|im_start|>") != std::string_view::npos ||
+      text.find("<|im_end|>") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "chatml");
+  }
+  if (text.find("[INST]") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "mistral-v7");
+    AddUniqueTemplate(&templates, "mistral-v1");
+  }
+
+  AddUniqueTemplate(&templates, "gemma");
+  AddUniqueTemplate(&templates, "llama3");
+  AddUniqueTemplate(&templates, "chatml");
+  AddUniqueTemplate(&templates, "mistral-v7");
+  AddUniqueTemplate(&templates, "mistral-v1");
+  return templates;
 }
 
 }  // namespace
@@ -624,6 +670,42 @@ llama_token LlamaResidencyAdapter::SampleToken() {
   return token;
 }
 
+std::string LlamaResidencyAdapter::ResolveChatTemplate() const {
+  if (chat_template_resolved_) {
+    return resolved_chat_template_;
+  }
+
+  const auto resolve = [this](std::string value) -> std::string {
+    resolved_chat_template_ = std::move(value);
+    chat_template_resolved_ = true;
+    return resolved_chat_template_;
+  };
+
+  if (!options_.chat_template.empty()) {
+    if (!CanApplyChatTemplate(options_.chat_template.c_str())) {
+      throw std::runtime_error("configured chat_template is not supported");
+    }
+    return resolve(options_.chat_template);
+  }
+
+  const char* model_template = llama_model_chat_template(model_.get(), nullptr);
+  if (model_template != nullptr && CanApplyChatTemplate(model_template)) {
+    return resolve("");
+  }
+
+  for (const char* candidate : FallbackChatTemplates(model_template)) {
+    if (CanApplyChatTemplate(candidate)) {
+      const std::string resolved = resolve(candidate);
+      std::cout << "chat template: " << resolved << "\n";
+      return resolved;
+    }
+  }
+
+  throw std::runtime_error(
+      "failed to detect a supported llama chat template; set chat_template in "
+      "sessions.txt");
+}
+
 std::string LlamaResidencyAdapter::ApplyChatTemplate(bool add_assistant) const {
   if (model_ == nullptr) {
     throw std::runtime_error("cannot apply llama chat template without model");
@@ -635,12 +717,10 @@ std::string LlamaResidencyAdapter::ApplyChatTemplate(bool add_assistant) const {
     messages.push_back({message.role.c_str(), message.content.c_str()});
   }
 
-  const char* tmpl = nullptr;
-  if (!options_.chat_template.empty()) {
-    tmpl = options_.chat_template.c_str();
-  } else {
-    tmpl = llama_model_chat_template(model_.get(), nullptr);
-  }
+  const std::string resolved_template = ResolveChatTemplate();
+  const char* tmpl = resolved_template.empty()
+                         ? llama_model_chat_template(model_.get(), nullptr)
+                         : resolved_template.c_str();
 
   int32_t length = llama_chat_apply_template(
       tmpl, messages.data(), messages.size(), add_assistant, nullptr, 0);
