@@ -368,20 +368,15 @@ bool OnnxLlmResidencyAdapter::ResumeCheck() {
   return report_.resume_match;
 }
 
-void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
-    const std::vector<int64_t>& tokens, int max_tokens,
-    const std::vector<int64_t>& expected_tokens) {
-  Timer timer;
+std::vector<int64_t> OnnxLlmResidencyAdapter::GenerateContinuationTokens(
+    const std::vector<int64_t>& tokens, int max_tokens) {
   if (tokens.empty()) {
     throw std::runtime_error("ONNX LLM continuation tokens are required");
   }
   if (max_tokens <= 0) {
     throw std::runtime_error("max_tokens must be positive");
   }
-  if (session_ == nullptr) {
-    ReloadModel();
-  }
-  RestoreState();
+  ValidateReadyForDecode();
 
   DecodeResult next = RunDecodeStep(tokens, cache_length_, true);
   report_.generated_token_ids.clear();
@@ -392,8 +387,22 @@ void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
   }
 
   report_.generated_tokens = report_.generated_token_ids.size();
+  return report_.generated_token_ids;
+}
+
+void OnnxLlmResidencyAdapter::RestoreAndGenerateContinuation(
+    const std::vector<int64_t>& tokens, int max_tokens,
+    const std::vector<int64_t>& expected_tokens) {
+  Timer timer;
+  if (session_ == nullptr) {
+    ReloadModel();
+  }
+  RestoreState();
+
+  const std::vector<int64_t> generated =
+      GenerateContinuationTokens(tokens, max_tokens);
   report_.generated_contains_expected =
-      ContainsSubsequence(report_.generated_token_ids, expected_tokens);
+      ContainsSubsequence(generated, expected_tokens);
   report_.restore_generate_ms = timer.ElapsedMs();
 }
 

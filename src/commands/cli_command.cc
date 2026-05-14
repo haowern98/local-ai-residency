@@ -19,6 +19,10 @@
 #include "residency/residency_controller.h"
 #include "runtime/config_line.h"
 
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+#include "tokenizer/tokenizers_cpp_adapter.h"
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
+
 #ifdef MOSAICVRAM_ENABLE_LLAMA
 #include "residency/llama_residency_adapter.h"
 #endif  // MOSAICVRAM_ENABLE_LLAMA
@@ -158,6 +162,28 @@ std::vector<std::string> SplitCommaSeparated(std::string_view text) {
     start = comma + 1;
   }
   return values;
+}
+
+std::size_t FindFirstStopString(std::string_view text,
+                                const std::vector<std::string>& stop_strings) {
+  std::size_t first = std::string_view::npos;
+  for (const std::string& stop : stop_strings) {
+    const std::size_t found = text.find(stop);
+    if (found != std::string_view::npos &&
+        (first == std::string_view::npos || found < first)) {
+      first = found;
+    }
+  }
+  return first;
+}
+
+std::string ApplyStopStrings(std::string text,
+                             const std::vector<std::string>& stop_strings) {
+  const std::size_t stop = FindFirstStopString(text, stop_strings);
+  if (stop != std::string_view::npos) {
+    text.resize(stop);
+  }
+  return text;
 }
 
 void ValidateSessionSpec(SessionSpec* spec) {
@@ -354,10 +380,6 @@ void CliRuntime::Use(const std::string& name) {
 void CliRuntime::EnterChat(const std::string& name) {
   const CliSession* session = Find(name);
   EnsureValid(*session);
-  const std::string backend = RequiredValue(session->spec, "backend");
-  if (backend == "onnx-llm") {
-    throw std::runtime_error("ONNX CLI chat is not implemented yet");
-  }
   active_session_ = name;
   Load(name);
   chat_mode_ = true;
@@ -450,23 +472,55 @@ void CliRuntime::ChatText(const std::string& text) {
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
   const std::string backend = RequiredValue(session->spec, "backend");
-  if (backend != "llama") {
-    throw std::runtime_error("ONNX CLI chat is not implemented yet");
-  }
   EnsureLoaded(name, session);
 
 #ifdef MOSAICVRAM_ENABLE_LLAMA
-  auto* adapter = dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
-  if (adapter == nullptr) {
-    throw std::runtime_error("active session is not a llama session");
+  if (backend == "llama") {
+    auto* adapter =
+        dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("active session is not a llama session");
+    }
+    const std::string generated =
+        adapter->GenerateChatReply(text, adapter->options().chat_max_tokens);
+    std::cout << name << ": " << generated << "\n";
+    return;
   }
-  const std::string generated =
-      adapter->GenerateChatReply(text, adapter->options().chat_max_tokens);
-  std::cout << name << ": " << generated << "\n";
-#else
-  (void)text;
-  throw std::runtime_error("CLI chat requires a build with llama.cpp enabled");
 #endif  // MOSAICVRAM_ENABLE_LLAMA
+
+#ifdef MOSAICVRAM_ENABLE_ONNX
+  if (backend == "onnx-llm") {
+    auto* adapter =
+        dynamic_cast<OnnxLlmResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("active session is not an ONNX session");
+    }
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+    const std::string& tokenizer_path =
+        RequiredValue(session->spec, "tokenizer");
+    const int max_tokens = OptionalInt(session->spec, "max_tokens", 512);
+    if (max_tokens <= 0) {
+      throw std::runtime_error("max_tokens must be greater than zero");
+    }
+    const std::vector<int64_t> input_tokens =
+        TokenizeWithTokenizerJson(tokenizer_path, text);
+    const std::vector<int64_t> generated_tokens =
+        adapter->GenerateContinuationTokens(input_tokens, max_tokens);
+    const std::vector<std::string> stop_strings =
+        SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
+    const std::string generated = ApplyStopStrings(
+        DecodeWithTokenizerJson(tokenizer_path, generated_tokens),
+        stop_strings);
+    std::cout << name << ": " << generated << "\n";
+    return;
+#else
+    throw std::runtime_error(
+        "ONNX CLI chat requires tokenizer.json support in this build");
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
+  }
+#endif  // MOSAICVRAM_ENABLE_ONNX
+
+  throw std::runtime_error("unsupported backend for chat: " + backend);
 }
 
 std::string CliRuntime::ResolveName(
