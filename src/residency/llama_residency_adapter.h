@@ -29,6 +29,8 @@ struct LlamaResidencyOptions {
   float chat_temperature = 0.8f;
   float chat_min_p = 0.05f;
   uint32_t chat_seed = LLAMA_DEFAULT_SEED;
+  std::string chat_template;
+  std::vector<std::string> stop_strings;
   llama_seq_id sequence_id = 0;
 };
 

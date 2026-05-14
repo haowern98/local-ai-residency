@@ -68,3 +68,8 @@ the last `/save`. Saved state is process-local; it is not written to disk.
 
 Chat generation options are read from `sessions.txt`. If omitted, the defaults
 are `max_tokens=512`, `temp=0.8`, `min_p=0.05`, and the llama.cpp default seed.
+For models whose GGUF chat template is not supported by llama.cpp's simple chat
+template API, set an explicit built-in template name, for example
+`chat_template=gemma`. If a model emits visible turn markers, set
+`stop_strings` to a comma-separated list, for example
+`stop_strings="<end_of_turn>,<start_of_turn>"`.

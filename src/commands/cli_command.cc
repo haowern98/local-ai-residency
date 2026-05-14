@@ -133,6 +133,25 @@ float OptionalFloat(const SessionSpec& spec, const std::string& key,
   return parsed;
 }
 
+std::vector<std::string> SplitCommaSeparated(std::string_view text) {
+  std::vector<std::string> values;
+  std::size_t start = 0;
+  while (start <= text.size()) {
+    const std::size_t comma = text.find(',', start);
+    const std::size_t end =
+        comma == std::string_view::npos ? text.size() : comma;
+    std::string value = Trim(text.substr(start, end - start));
+    if (!value.empty()) {
+      values.push_back(std::move(value));
+    }
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  return values;
+}
+
 void ValidateSessionSpec(SessionSpec* spec) {
   spec->issue.clear();
   const auto backend = spec->values.find("backend");
@@ -509,6 +528,10 @@ void CliRuntime::RegisterAdapter(CliSession* session) {
   options.chat_min_p =
       OptionalFloat(session->spec, "min_p", options.chat_min_p);
   options.chat_seed = OptionalUint32(session->spec, "seed", options.chat_seed);
+  options.chat_template =
+      OptionalString(session->spec, "chat_template", options.chat_template);
+  options.stop_strings =
+      SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
   if (options.chat_max_tokens <= 0) {
     throw std::runtime_error("max_tokens must be greater than zero");
   }

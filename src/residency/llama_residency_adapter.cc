@@ -60,25 +60,17 @@ bool IsBlank(std::string_view text) {
   return true;
 }
 
-bool IsChatStopPiece(std::string_view text) {
-  return text.find("<|im_start|>") != std::string_view::npos ||
-         text.find("<|im_end|>") != std::string_view::npos;
-}
-
-std::string TruncateAtChatStop(std::string text) {
-  const std::size_t im_start = text.find("<|im_start|>");
-  const std::size_t im_end = text.find("<|im_end|>");
-  std::size_t stop = std::string::npos;
-  if (im_start != std::string::npos) {
-    stop = im_start;
+std::size_t FindFirstStopString(std::string_view text,
+                                const std::vector<std::string>& stop_strings) {
+  std::size_t first = std::string_view::npos;
+  for (const std::string& stop : stop_strings) {
+    const std::size_t found = text.find(stop);
+    if (found != std::string_view::npos &&
+        (first == std::string_view::npos || found < first)) {
+      first = found;
+    }
   }
-  if (im_end != std::string::npos) {
-    stop = stop == std::string::npos ? im_end : std::min(stop, im_end);
-  }
-  if (stop != std::string::npos) {
-    text.resize(stop);
-  }
-  return text;
+  return first;
 }
 
 }  // namespace
@@ -359,10 +351,6 @@ std::string LlamaResidencyAdapter::GenerateContinuation(const std::string& text,
     if (llama_vocab_is_eog(vocab_, token)) {
       break;
     }
-    const std::string piece = DetokenizeTokens({token});
-    if (IsChatStopPiece(piece)) {
-      break;
-    }
     generated_tokens.push_back(token);
     std::vector<llama_token> next = {token};
     DecodeTokens(next);
@@ -402,23 +390,26 @@ std::string LlamaResidencyAdapter::GenerateChatReply(
 
   std::vector<llama_token> generated_tokens;
   generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
+  std::string generated_text;
   for (int i = 0; i < max_tokens; ++i) {
-    const llama_token token = GreedyToken();
+    const llama_token token = SampleToken();
     if (llama_vocab_is_eog(vocab_, token)) {
       break;
     }
-    const std::string piece = DetokenizeTokens({token});
-    if (IsChatStopPiece(piece)) {
+    generated_tokens.push_back(token);
+    generated_text += DetokenizeTokens({token});
+    const std::size_t stop =
+        FindFirstStopString(generated_text, options_.stop_strings);
+    if (stop != std::string::npos) {
+      generated_text.resize(stop);
       break;
     }
-    generated_tokens.push_back(token);
     std::vector<llama_token> next = {token};
     DecodeTokens(next);
   }
 
   report_.generated_tokens = generated_tokens.size();
-  report_.generated_text =
-      TruncateAtChatStop(DetokenizeTokens(generated_tokens));
+  report_.generated_text = generated_text;
   chat_messages_.push_back({"assistant", report_.generated_text});
   chat_formatted_length_ =
       static_cast<int32_t>(formatted.size() + report_.generated_text.size());
@@ -637,10 +628,6 @@ std::string LlamaResidencyAdapter::ApplyChatTemplate(bool add_assistant) const {
   if (model_ == nullptr) {
     throw std::runtime_error("cannot apply llama chat template without model");
   }
-  const char* tmpl = llama_model_chat_template(model_.get(), nullptr);
-  if (tmpl == nullptr) {
-    throw std::runtime_error("llama model does not provide a chat template");
-  }
 
   std::vector<llama_chat_message> messages;
   messages.reserve(chat_messages_.size());
@@ -648,17 +635,28 @@ std::string LlamaResidencyAdapter::ApplyChatTemplate(bool add_assistant) const {
     messages.push_back({message.role.c_str(), message.content.c_str()});
   }
 
+  const char* tmpl = nullptr;
+  if (!options_.chat_template.empty()) {
+    tmpl = options_.chat_template.c_str();
+  } else {
+    tmpl = llama_model_chat_template(model_.get(), nullptr);
+  }
+
   int32_t length = llama_chat_apply_template(
       tmpl, messages.data(), messages.size(), add_assistant, nullptr, 0);
   if (length < 0) {
-    throw std::runtime_error("failed to apply llama chat template");
+    throw std::runtime_error(
+        "failed to apply llama chat template; set chat_template in "
+        "sessions.txt");
   }
   std::string formatted(static_cast<std::size_t>(length), '\0');
   length = llama_chat_apply_template(tmpl, messages.data(), messages.size(),
                                      add_assistant, formatted.data(),
                                      static_cast<int32_t>(formatted.size()));
   if (length < 0 || length > static_cast<int32_t>(formatted.size())) {
-    throw std::runtime_error("failed to apply llama chat template");
+    throw std::runtime_error(
+        "failed to apply llama chat template; set chat_template in "
+        "sessions.txt");
   }
   formatted.resize(static_cast<std::size_t>(length));
   return formatted;
