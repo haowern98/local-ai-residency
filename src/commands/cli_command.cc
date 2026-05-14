@@ -23,6 +23,10 @@
 #include "residency/llama_residency_adapter.h"
 #endif  // MOSAICVRAM_ENABLE_LLAMA
 
+#ifdef _WIN32
+#include <windows.h>
+#endif  // _WIN32
+
 namespace mosaicvram {
 namespace {
 
@@ -608,6 +612,13 @@ void ExecuteCommand(const ConfigLine& line, CliRuntime* runtime,
   throw std::runtime_error("unknown command: " + line.kind);
 }
 
+void ConfigureCliConsole() {
+#ifdef _WIN32
+  SetConsoleOutputCP(CP_UTF8);
+  SetConsoleCP(CP_UTF8);
+#endif  // _WIN32
+}
+
 }  // namespace
 
 int RunCliCommand(int argc, char** argv) {
@@ -619,6 +630,8 @@ int RunCliCommand(int argc, char** argv) {
     PrintUsage();
     return EXIT_SUCCESS;
   }
+
+  ConfigureCliConsole();
 
   CliRuntime runtime(options.config_path);
   std::cout << "MosaicVRAM CLI\n"
