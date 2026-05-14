@@ -13,6 +13,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -173,6 +174,22 @@ std::string DecodeFailureMessage(const OnnxLlmResidencyReport& report) {
           << "; position_ids_present="
           << (report.position_ids_present ? "yes" : "no");
   return message.str();
+}
+
+int64_t GreedyToken(std::span<const float> logits) {
+  int64_t best_token = -1;
+  float best_logit = -std::numeric_limits<float>::infinity();
+  for (std::size_t i = 0; i < logits.size(); ++i) {
+    const float value = logits[i];
+    if (!std::isfinite(value)) {
+      continue;
+    }
+    if (best_token < 0 || value > best_logit) {
+      best_token = static_cast<int64_t>(i);
+      best_logit = value;
+    }
+  }
+  return best_token;
 }
 
 }  // namespace
@@ -378,12 +395,16 @@ std::vector<int64_t> OnnxLlmResidencyAdapter::GenerateContinuationTokens(
   }
   ValidateReadyForDecode();
 
+  LogitsSampler sampler(options_.sampling);
+  std::vector<int64_t> recent_tokens = tokens;
   DecodeResult next = RunDecodeStep(tokens, cache_length_, true);
   report_.generated_token_ids.clear();
   report_.generated_token_ids.reserve(static_cast<std::size_t>(max_tokens));
   for (int i = 0; i < max_tokens; ++i) {
-    report_.generated_token_ids.push_back(next.next_token);
-    next = RunDecodeStep({next.next_token}, cache_length_, true);
+    const int64_t sampled_token = sampler.Sample(next.logits, recent_tokens);
+    report_.generated_token_ids.push_back(sampled_token);
+    recent_tokens.push_back(sampled_token);
+    next = RunDecodeStep({sampled_token}, cache_length_, true);
   }
 
   report_.generated_tokens = report_.generated_token_ids.size();
@@ -680,9 +701,8 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
       static_cast<std::size_t>(input_length * vocab_size_);
   const std::size_t last_token_offset =
       static_cast<std::size_t>((input_length - 1) * vocab_size_);
-  float best_logit = -std::numeric_limits<float>::infinity();
-  int64_t best_token = -1;
   double checksum = 0.0;
+  std::vector<float> last_logits(static_cast<std::size_t>(vocab_size_));
   report_.logits_finite_count = 0;
   report_.logits_nan_count = 0;
   report_.logits_pos_inf_count = 0;
@@ -704,14 +724,11 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
       const float value = HalfToFloat(
           host_logits[last_token_offset + static_cast<std::size_t>(i)]);
       CountLogitValue(value, &report_);
+      last_logits[static_cast<std::size_t>(i)] = value;
       if (!std::isfinite(value)) {
         continue;
       }
       checksum += static_cast<double>(value);
-      if (value > best_logit) {
-        best_logit = value;
-        best_token = i;
-      }
     }
   } else if (logits_element_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
     std::vector<float> host_logits(logits_values);
@@ -723,26 +740,24 @@ OnnxLlmResidencyAdapter::DecodeResult OnnxLlmResidencyAdapter::RunDecodeStep(
       const float value =
           host_logits[last_token_offset + static_cast<std::size_t>(i)];
       CountLogitValue(value, &report_);
+      last_logits[static_cast<std::size_t>(i)] = value;
       if (!std::isfinite(value)) {
         continue;
       }
       checksum += static_cast<double>(value);
-      if (value > best_logit) {
-        best_logit = value;
-        best_token = i;
-      }
     }
   } else {
     throw std::runtime_error("ONNX LLM logits dtype is unsupported");
   }
 
+  const int64_t best_token = GreedyToken(last_logits);
   if (best_token < 0) {
     throw std::runtime_error(DecodeFailureMessage(report_));
   }
   report_.decode_valid = true;
 
   ReplaceCache(&present_tensors, total_length);
-  return DecodeResult{best_token, checksum};
+  return DecodeResult{best_token, checksum, std::move(last_logits)};
 }
 
 void OnnxLlmResidencyAdapter::ReplaceCache(

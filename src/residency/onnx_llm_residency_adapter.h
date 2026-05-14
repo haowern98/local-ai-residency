@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "residency/backend_state_adapter.h"
+#include "sampling/logits_sampler.h"
 
 namespace mosaicvram {
 
@@ -21,6 +22,7 @@ struct OnnxLlmResidencyOptions {
   std::vector<int64_t> prompt_tokens;
   int prefill_chunk_tokens = 512;
   int device_index = 0;
+  SamplingOptions sampling;
 };
 
 struct OnnxLlmResidencyReport {
@@ -119,6 +121,7 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   struct DecodeResult {
     int64_t next_token = -1;
     double logits_checksum = 0.0;
+    std::vector<float> logits;
   };
 
   void CreateSession(double* elapsed_ms);
