@@ -50,6 +50,7 @@ add_executable(
   src/main.cc
   src/residency/residency_controller.cc
   src/runtime/config_line.cc
+  src/sampling/logits_sampler.cc
   src/util/timer.cc)
 
 if(MOSAICVRAM_ENABLE_ONNX)
