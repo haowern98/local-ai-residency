@@ -162,6 +162,25 @@ bool ContainsSubsequence(const std::vector<int64_t>& values,
                      expected.end()) != values.end();
 }
 
+bool EndsWithTokens(const std::vector<int64_t>& values,
+                    const std::vector<int64_t>& suffix) {
+  if (suffix.empty() || values.size() < suffix.size()) {
+    return false;
+  }
+  return std::equal(suffix.rbegin(), suffix.rend(), values.rbegin());
+}
+
+bool RemoveStopSuffix(const std::vector<std::vector<int64_t>>& stop_sequences,
+                      std::vector<int64_t>* values) {
+  for (const std::vector<int64_t>& sequence : stop_sequences) {
+    if (EndsWithTokens(*values, sequence)) {
+      values->resize(values->size() - sequence.size());
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string DecodeFailureMessage(const OnnxLlmResidencyReport& report) {
   std::ostringstream message;
   message << "ONNX LLM decode produced no valid next token"
@@ -251,6 +270,7 @@ void OnnxLlmResidencyAdapter::Load() {
   CreateSession(&load_ms);
   report_.initial_session_load_ms = load_ms;
   DiscoverModelIo();
+  cache_length_ = 0;
   AllocateInitialCache();
   residency_state_ = ResidencyState::kResident;
 }
@@ -387,6 +407,12 @@ bool OnnxLlmResidencyAdapter::ResumeCheck() {
 
 std::vector<int64_t> OnnxLlmResidencyAdapter::GenerateContinuationTokens(
     const std::vector<int64_t>& tokens, int max_tokens) {
+  return GenerateContinuationTokens(tokens, max_tokens, {});
+}
+
+std::vector<int64_t> OnnxLlmResidencyAdapter::GenerateContinuationTokens(
+    const std::vector<int64_t>& tokens, int max_tokens,
+    const std::vector<std::vector<int64_t>>& stop_token_sequences) {
   if (tokens.empty()) {
     throw std::runtime_error("ONNX LLM continuation tokens are required");
   }
@@ -404,6 +430,9 @@ std::vector<int64_t> OnnxLlmResidencyAdapter::GenerateContinuationTokens(
     const int64_t sampled_token = sampler.Sample(next.logits, recent_tokens);
     report_.generated_token_ids.push_back(sampled_token);
     recent_tokens.push_back(sampled_token);
+    if (RemoveStopSuffix(stop_token_sequences, &report_.generated_token_ids)) {
+      break;
+    }
     next = RunDecodeStep({sampled_token}, cache_length_, true);
   }
 
@@ -770,6 +799,7 @@ void OnnxLlmResidencyAdapter::FreeCache() {
   for (KvTensor& tensor : kv_tensors_) {
     tensor.cache_buffer.Free();
   }
+  cache_length_ = 0;
 }
 
 void OnnxLlmResidencyAdapter::ValidateReadyForDecode() const {

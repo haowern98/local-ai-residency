@@ -76,6 +76,9 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   void CaptureBaselineNextToken();
   std::vector<int64_t> GenerateContinuationTokens(
       const std::vector<int64_t>& tokens, int max_tokens);
+  std::vector<int64_t> GenerateContinuationTokens(
+      const std::vector<int64_t>& tokens, int max_tokens,
+      const std::vector<std::vector<int64_t>>& stop_token_sequences);
   void RestoreAndGenerateContinuation(
       const std::vector<int64_t>& tokens, int max_tokens,
       const std::vector<int64_t>& expected_tokens);

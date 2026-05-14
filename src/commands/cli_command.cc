@@ -19,6 +19,7 @@
 
 #include "residency/residency_controller.h"
 #include "runtime/config_line.h"
+#include "sampling/logits_sampler.h"
 
 #ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
 #include "tokenizer/tokenizers_cpp_adapter.h"
@@ -195,6 +196,40 @@ void AppendMissingStrings(const std::vector<std::string>& values,
     }
   }
 }
+
+void ValidateSamplingOptions(const SamplingOptions& options) {
+  if (options.temperature < 0.0f) {
+    throw std::runtime_error("temp must be greater than or equal to zero");
+  }
+  if (options.top_k < 0) {
+    throw std::runtime_error("top_k must be greater than or equal to zero");
+  }
+  if (options.top_p < 0.0f || options.top_p > 1.0f) {
+    throw std::runtime_error("top_p must be between 0 and 1");
+  }
+  if (options.min_p < 0.0f || options.min_p > 1.0f) {
+    throw std::runtime_error("min_p must be between 0 and 1");
+  }
+  if (options.repeat_penalty <= 0.0f) {
+    throw std::runtime_error("repeat_penalty must be greater than zero");
+  }
+}
+
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+std::vector<std::vector<int64_t>> TokenizeStopStrings(
+    const std::string& tokenizer_path,
+    const std::vector<std::string>& stop_strings) {
+  std::vector<std::vector<int64_t>> sequences;
+  for (const std::string& stop : stop_strings) {
+    std::vector<int64_t> tokens =
+        TokenizeWithTokenizerJson(tokenizer_path, stop);
+    if (!tokens.empty()) {
+      sequences.push_back(std::move(tokens));
+    }
+  }
+  return sequences;
+}
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
 
 void ValidateSessionSpec(SessionSpec* spec) {
   spec->issue.clear();
@@ -516,11 +551,14 @@ void CliRuntime::ChatText(const std::string& text) {
         ApplyTokenizerChatTemplate(tokenizer_path, text);
     const std::vector<int64_t> input_tokens =
         TokenizeWithTokenizerJson(tokenizer_path, chat_prompt.text);
-    const std::vector<int64_t> generated_tokens =
-        adapter->GenerateContinuationTokens(input_tokens, max_tokens);
     std::vector<std::string> stop_strings =
         SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
     AppendMissingStrings(chat_prompt.stop_strings, &stop_strings);
+    const std::vector<std::vector<int64_t>> stop_token_sequences =
+        TokenizeStopStrings(tokenizer_path, stop_strings);
+    const std::vector<int64_t> generated_tokens =
+        adapter->GenerateContinuationTokens(input_tokens, max_tokens,
+                                            stop_token_sequences);
     const std::string generated = ApplyStopStrings(
         DecodeWithTokenizerJson(tokenizer_path, generated_tokens),
         stop_strings);
@@ -681,6 +719,19 @@ void CliRuntime::RegisterAdapter(CliSession* session) {
                                                options.prefill_chunk_tokens);
     options.device_index =
         OptionalInt(session->spec, "device", options.device_index);
+    options.sampling.temperature =
+        OptionalFloat(session->spec, "temp", options.sampling.temperature);
+    options.sampling.top_k =
+        OptionalInt(session->spec, "top_k", options.sampling.top_k);
+    options.sampling.top_p =
+        OptionalFloat(session->spec, "top_p", options.sampling.top_p);
+    options.sampling.min_p =
+        OptionalFloat(session->spec, "min_p", options.sampling.min_p);
+    options.sampling.repeat_penalty = OptionalFloat(
+        session->spec, "repeat_penalty", options.sampling.repeat_penalty);
+    options.sampling.seed =
+        OptionalUint32(session->spec, "seed", options.sampling.seed);
+    ValidateSamplingOptions(options.sampling);
     session->adapter = std::make_unique<OnnxLlmResidencyAdapter>(options);
     const ResidencyControllerResult result =
         controller_->RegisterAdapter(session->adapter.get());
