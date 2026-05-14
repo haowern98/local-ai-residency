@@ -377,6 +377,7 @@ void CliRuntime::Restore(const std::string& name) {
   if (!restore_result.ok) {
     throw std::runtime_error(restore_result.error_message);
   }
+  chat_mode_ = true;
   std::cout << "restored " << name << "\n";
 }
 
