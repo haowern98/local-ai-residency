@@ -12,6 +12,9 @@ namespace mosaicvram {
 std::vector<int64_t> TokenizeWithTokenizerJson(
     const std::string& tokenizer_path, const std::string& prompt);
 
+std::string DecodeWithTokenizerJson(const std::string& tokenizer_path,
+                                    const std::vector<int64_t>& token_ids);
+
 }  // namespace mosaicvram
 
 #endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON

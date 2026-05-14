@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -43,10 +44,8 @@ std::filesystem::path ResolveTokenizerJsonPath(const std::string& path) {
   return json_path;
 }
 
-}  // namespace
-
-std::vector<int64_t> TokenizeWithTokenizerJson(
-    const std::string& tokenizer_path, const std::string& prompt) {
+std::unique_ptr<tokenizers::Tokenizer> LoadTokenizerJson(
+    const std::string& tokenizer_path) {
   const std::filesystem::path json_path =
       ResolveTokenizerJsonPath(tokenizer_path);
   const std::string json_blob = ReadBinaryFile(json_path);
@@ -56,6 +55,15 @@ std::vector<int64_t> TokenizeWithTokenizerJson(
     throw std::runtime_error("failed to load tokenizer.json: " +
                              json_path.string());
   }
+  return tokenizer;
+}
+
+}  // namespace
+
+std::vector<int64_t> TokenizeWithTokenizerJson(
+    const std::string& tokenizer_path, const std::string& prompt) {
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer =
+      LoadTokenizerJson(tokenizer_path);
 
   const std::vector<int32_t> token_ids = tokenizer->Encode(prompt);
   if (token_ids.empty()) {
@@ -71,6 +79,23 @@ std::vector<int64_t> TokenizeWithTokenizerJson(
     result.push_back(static_cast<int64_t>(token_id));
   }
   return result;
+}
+
+std::string DecodeWithTokenizerJson(const std::string& tokenizer_path,
+                                    const std::vector<int64_t>& token_ids) {
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer =
+      LoadTokenizerJson(tokenizer_path);
+
+  std::vector<int32_t> ids;
+  ids.reserve(token_ids.size());
+  for (const int64_t token_id : token_ids) {
+    if (token_id < 0 || token_id > std::numeric_limits<int32_t>::max()) {
+      throw std::runtime_error(
+          "cannot decode token id outside int32 tokenizer range");
+    }
+    ids.push_back(static_cast<int32_t>(token_id));
+  }
+  return tokenizer->Decode(ids);
 }
 
 }  // namespace mosaicvram

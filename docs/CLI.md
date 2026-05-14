@@ -31,6 +31,11 @@ output:
 session onnx backend=onnx-llm model="C:\models\deepseek\model.onnx" tokenizer="C:\models\deepseek" prefill_chunk=512 device=0
 ```
 
+For ONNX sessions, `tokenizer=` is mandatory and must point to `tokenizer.json`
+or a directory containing `tokenizer.json`. MosaicVRAM uses that tokenizer file
+through its native tokenizer adapter for both text encoding and generated-token
+decoding. The CLI must not print raw token IDs as chat output.
+
 After editing the file while the CLI is open, run:
 
 ```text
