@@ -23,6 +23,10 @@
 #include "residency/llama_residency_adapter.h"
 #endif  // MOSAICVRAM_ENABLE_LLAMA
 
+#ifdef MOSAICVRAM_ENABLE_ONNX
+#include "residency/onnx_llm_residency_adapter.h"
+#endif  // MOSAICVRAM_ENABLE_ONNX
+
 #ifdef _WIN32
 #include <windows.h>
 #endif  // _WIN32
@@ -350,6 +354,10 @@ void CliRuntime::Use(const std::string& name) {
 void CliRuntime::EnterChat(const std::string& name) {
   const CliSession* session = Find(name);
   EnsureValid(*session);
+  const std::string backend = RequiredValue(session->spec, "backend");
+  if (backend == "onnx-llm") {
+    throw std::runtime_error("ONNX CLI chat is not implemented yet");
+  }
   active_session_ = name;
   Load(name);
   chat_mode_ = true;
@@ -501,91 +509,122 @@ void CliRuntime::EnsureLoaded(const std::string& name, CliSession* session) {
   }
   const ResidencyState state = session->adapter->residency_state();
   const std::string backend = RequiredValue(session->spec, "backend");
-  if (backend != "llama") {
-    throw std::runtime_error("ONNX CLI lifecycle is not implemented yet");
-  }
 #ifdef MOSAICVRAM_ENABLE_LLAMA
-  auto* adapter = dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
-  if (adapter == nullptr) {
-    throw std::runtime_error(
-        "CLI phase currently supports llama sessions only");
-  }
-  if (state == ResidencyState::kUnloaded) {
-    adapter->Load();
-    adapter->CreateContext();
-    std::cout << "loaded " << name << "\n";
+  if (backend == "llama") {
+    auto* adapter =
+        dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("llama session has invalid adapter");
+    }
+    if (state == ResidencyState::kUnloaded) {
+      adapter->Load();
+      adapter->CreateContext();
+      std::cout << "loaded " << name << "\n";
+      return;
+    }
+    if (state == ResidencyState::kModelEvicted) {
+      adapter->ReloadModel();
+      adapter->CreateContext();
+      std::cout << "loaded " << name << "\n";
+      return;
+    }
+    if (state == ResidencyState::kContextEvicted) {
+      adapter->CreateContext();
+      std::cout << "loaded " << name << "\n";
+    }
     return;
   }
-  if (state == ResidencyState::kModelEvicted) {
-    adapter->ReloadModel();
-    adapter->CreateContext();
-    std::cout << "loaded " << name << "\n";
-    return;
-  }
-  if (state == ResidencyState::kContextEvicted) {
-    adapter->CreateContext();
-    std::cout << "loaded " << name << "\n";
-  }
-#else
-  (void)name;
-  throw std::runtime_error("CLI requires a build with llama.cpp enabled");
 #endif  // MOSAICVRAM_ENABLE_LLAMA
+
+#ifdef MOSAICVRAM_ENABLE_ONNX
+  if (backend == "onnx-llm") {
+    auto* adapter =
+        dynamic_cast<OnnxLlmResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("onnx-llm session has invalid adapter");
+    }
+    if (state == ResidencyState::kUnloaded ||
+        state == ResidencyState::kModelEvicted ||
+        state == ResidencyState::kContextEvicted) {
+      adapter->Load();
+      std::cout << "loaded " << name << "\n";
+    }
+    return;
+  }
+#endif  // MOSAICVRAM_ENABLE_ONNX
+
+  throw std::runtime_error("unsupported backend: " + backend);
 }
 
 void CliRuntime::RegisterAdapter(CliSession* session) {
   const std::string backend = RequiredValue(session->spec, "backend");
-  if (backend == "onnx-llm") {
-    throw std::runtime_error("ONNX CLI lifecycle is not implemented yet");
-  }
-  if (backend != "llama") {
-    throw std::runtime_error("unsupported backend: " + backend);
-  }
-
 #ifdef MOSAICVRAM_ENABLE_LLAMA
-  LlamaResidencyOptions options;
-  options.session_id = session->spec.id;
-  options.model_path = RequiredValue(session->spec, "model");
-  options.context_tokens =
-      OptionalInt(session->spec, "ctx", options.context_tokens);
-  options.batch_tokens =
-      OptionalInt(session->spec, "batch", options.batch_tokens);
-  options.gpu_layers =
-      OptionalInt(session->spec, "gpu_layers", options.gpu_layers);
-  options.device_index =
-      OptionalInt(session->spec, "device", options.device_index);
-  options.threads = OptionalInt(session->spec, "threads", options.threads);
-  options.chat_max_tokens =
-      OptionalInt(session->spec, "max_tokens", options.chat_max_tokens);
-  options.chat_temperature =
-      OptionalFloat(session->spec, "temp", options.chat_temperature);
-  options.chat_min_p =
-      OptionalFloat(session->spec, "min_p", options.chat_min_p);
-  options.chat_seed = OptionalUint32(session->spec, "seed", options.chat_seed);
-  options.chat_template =
-      OptionalString(session->spec, "chat_template", options.chat_template);
-  options.stop_strings =
-      SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
-  if (options.chat_max_tokens <= 0) {
-    throw std::runtime_error("max_tokens must be greater than zero");
+  if (backend == "llama") {
+    LlamaResidencyOptions options;
+    options.session_id = session->spec.id;
+    options.model_path = RequiredValue(session->spec, "model");
+    options.context_tokens =
+        OptionalInt(session->spec, "ctx", options.context_tokens);
+    options.batch_tokens =
+        OptionalInt(session->spec, "batch", options.batch_tokens);
+    options.gpu_layers =
+        OptionalInt(session->spec, "gpu_layers", options.gpu_layers);
+    options.device_index =
+        OptionalInt(session->spec, "device", options.device_index);
+    options.threads = OptionalInt(session->spec, "threads", options.threads);
+    options.chat_max_tokens =
+        OptionalInt(session->spec, "max_tokens", options.chat_max_tokens);
+    options.chat_temperature =
+        OptionalFloat(session->spec, "temp", options.chat_temperature);
+    options.chat_min_p =
+        OptionalFloat(session->spec, "min_p", options.chat_min_p);
+    options.chat_seed =
+        OptionalUint32(session->spec, "seed", options.chat_seed);
+    options.chat_template =
+        OptionalString(session->spec, "chat_template", options.chat_template);
+    options.stop_strings =
+        SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
+    if (options.chat_max_tokens <= 0) {
+      throw std::runtime_error("max_tokens must be greater than zero");
+    }
+    if (options.chat_temperature < 0.0f) {
+      throw std::runtime_error("temp must be greater than or equal to zero");
+    }
+    if (options.chat_min_p < 0.0f || options.chat_min_p > 1.0f) {
+      throw std::runtime_error("min_p must be between 0 and 1");
+    }
+    options.sequence_id =
+        OptionalInt(session->spec, "seq_id", options.sequence_id);
+    session->adapter = std::make_unique<LlamaResidencyAdapter>(options);
+    const ResidencyControllerResult result =
+        controller_->RegisterAdapter(session->adapter.get());
+    if (!result.ok) {
+      throw std::runtime_error(result.error_message);
+    }
+    return;
   }
-  if (options.chat_temperature < 0.0f) {
-    throw std::runtime_error("temp must be greater than or equal to zero");
-  }
-  if (options.chat_min_p < 0.0f || options.chat_min_p > 1.0f) {
-    throw std::runtime_error("min_p must be between 0 and 1");
-  }
-  options.sequence_id =
-      OptionalInt(session->spec, "seq_id", options.sequence_id);
-  session->adapter = std::make_unique<LlamaResidencyAdapter>(options);
-  const ResidencyControllerResult result =
-      controller_->RegisterAdapter(session->adapter.get());
-  if (!result.ok) {
-    throw std::runtime_error(result.error_message);
-  }
-#else
-  (void)session;
-  throw std::runtime_error("CLI requires a build with llama.cpp enabled");
 #endif  // MOSAICVRAM_ENABLE_LLAMA
+
+#ifdef MOSAICVRAM_ENABLE_ONNX
+  if (backend == "onnx-llm") {
+    OnnxLlmResidencyOptions options;
+    options.session_id = session->spec.id;
+    options.model_path = RequiredValue(session->spec, "model");
+    options.prefill_chunk_tokens = OptionalInt(session->spec, "prefill_chunk",
+                                               options.prefill_chunk_tokens);
+    options.device_index =
+        OptionalInt(session->spec, "device", options.device_index);
+    session->adapter = std::make_unique<OnnxLlmResidencyAdapter>(options);
+    const ResidencyControllerResult result =
+        controller_->RegisterAdapter(session->adapter.get());
+    if (!result.ok) {
+      throw std::runtime_error(result.error_message);
+    }
+    return;
+  }
+#endif  // MOSAICVRAM_ENABLE_ONNX
+
+  throw std::runtime_error("unsupported backend in this build: " + backend);
 }
 
 void CliRuntime::RebuildController() {

@@ -23,9 +23,9 @@ Edit `sessions.txt` manually. A llama.cpp session looks like this:
 session llama backend=llama model="C:\models\qwen.gguf" ctx=16384 batch=512 gpu_layers=-1 device=0 max_tokens=512 temp=0.8 min_p=0.05 seed=1234
 ```
 
-ONNX sessions can be listed and validated by the CLI. ONNX chat generation is
-implemented in the next phase and will require decoded text output, not token ID
-output:
+ONNX sessions can be listed, loaded, evicted, saved after context exists, and
+restored by the CLI. ONNX chat generation is implemented in the next phase and
+will require decoded text output, not token ID output:
 
 ```text
 session onnx backend=onnx-llm model="C:\models\deepseek\model.onnx" tokenizer="C:\models\deepseek" prefill_chunk=512 device=0

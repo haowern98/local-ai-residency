@@ -224,9 +224,6 @@ OnnxLlmResidencyAdapter::OnnxLlmResidencyAdapter(
 OnnxLlmResidencyAdapter::~OnnxLlmResidencyAdapter() = default;
 
 void OnnxLlmResidencyAdapter::Load() {
-  if (options_.prompt_tokens.empty()) {
-    throw std::runtime_error("ONNX LLM prompt tokens are required");
-  }
   if (options_.prefill_chunk_tokens <= 0) {
     throw std::runtime_error("ONNX LLM prefill chunk size must be positive");
   }
@@ -244,6 +241,9 @@ void OnnxLlmResidencyAdapter::Load() {
 void OnnxLlmResidencyAdapter::PrefillPrompt() {
   Timer timer;
   ValidateReadyForDecode();
+  if (options_.prompt_tokens.empty()) {
+    throw std::runtime_error("ONNX LLM prompt tokens are required");
+  }
   DecodeResult result;
   const std::size_t chunk_size =
       static_cast<std::size_t>(options_.prefill_chunk_tokens);
@@ -281,6 +281,9 @@ BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
   Timer timer;
   ValidateReadyForDecode();
   const std::size_t bytes = CacheBytes();
+  if (bytes == 0) {
+    throw std::runtime_error("ONNX LLM context is empty; nothing to save");
+  }
   snapshot_.full_state.Allocate(bytes);
   std::uint8_t* dst = snapshot_.full_state.data();
   for (const KvTensor& tensor : kv_tensors_) {
