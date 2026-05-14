@@ -272,13 +272,21 @@ void PrintHelp() {
             << "  /sessions\n"
             << "  /use <session>\n"
             << "  /chat [session]\n"
-            << "  /load [session]\n"
-            << "  /save [session]\n"
-            << "  /evict [session]\n"
-            << "  /restore [session]\n"
+            << "  /load <session>\n"
+            << "  /save <session>\n"
+            << "  /evict <session>\n"
+            << "  /restore <session>\n"
             << "  /reset <session>\n"
             << "  /reload-config\n"
             << "  /exit\n";
+}
+
+std::string RequiredSessionArgument(const ConfigLine& line,
+                                    const std::string& usage) {
+  if (line.positional.empty()) {
+    throw std::runtime_error("missing session argument; use " + usage);
+  }
+  return line.positional.front();
 }
 
 bool ParseOptions(int argc, char** argv, CliOptions* options) {
@@ -802,27 +810,23 @@ void ExecuteCommand(const ConfigLine& line, CliRuntime* runtime,
     return;
   }
   if (line.kind == "/load") {
-    runtime->Load(runtime->ResolveName(line.positional));
+    runtime->Load(RequiredSessionArgument(line, "/load <session>"));
     return;
   }
   if (line.kind == "/save") {
-    runtime->Save(runtime->ResolveName(line.positional));
+    runtime->Save(RequiredSessionArgument(line, "/save <session>"));
     return;
   }
   if (line.kind == "/evict") {
-    runtime->Evict(runtime->ResolveName(line.positional));
+    runtime->Evict(RequiredSessionArgument(line, "/evict <session>"));
     return;
   }
   if (line.kind == "/restore") {
-    runtime->Restore(runtime->ResolveName(line.positional));
+    runtime->Restore(RequiredSessionArgument(line, "/restore <session>"));
     return;
   }
   if (line.kind == "/reset") {
-    if (line.positional.empty()) {
-      throw std::runtime_error(
-          "missing session argument; use /reset <session>");
-    }
-    runtime->Reset(line.positional.front());
+    runtime->Reset(RequiredSessionArgument(line, "/reset <session>"));
     return;
   }
   throw std::runtime_error("unknown command: " + line.kind);
