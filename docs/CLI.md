@@ -55,7 +55,8 @@ mosaic> /chat
 llama> Hello, my name is xjghft. Remember this.
 llama> /save
 llama> /evict
-llama> /restore
+mosaic> /restore
+mosaic> /chat
 llama> What is my name?
 llama> /exit
 ```
