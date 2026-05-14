@@ -276,7 +276,7 @@ void PrintHelp() {
             << "  /save [session]\n"
             << "  /evict [session]\n"
             << "  /restore [session]\n"
-            << "  /reset [session]\n"
+            << "  /reset <session>\n"
             << "  /reload-config\n"
             << "  /exit\n";
 }
@@ -492,24 +492,47 @@ void CliRuntime::Reset(const std::string& name) {
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
   const std::string backend = RequiredValue(session->spec, "backend");
-  if (backend != "llama") {
-    throw std::runtime_error("ONNX CLI reset is not implemented yet");
-  }
-  if (session->adapter == nullptr) {
+
+  if (backend == "llama") {
+#ifdef MOSAICVRAM_ENABLE_LLAMA
+    if (session->adapter == nullptr) {
+      std::cout << "reset " << name << "\n";
+      return;
+    }
+    auto* adapter =
+        dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("active session is not a llama session");
+    }
+    adapter->ResetConversation();
     std::cout << "reset " << name << "\n";
     return;
+#else
+    throw std::runtime_error(
+        "CLI reset requires a build with llama.cpp enabled");
+#endif  // MOSAICVRAM_ENABLE_LLAMA
   }
 
-#ifdef MOSAICVRAM_ENABLE_LLAMA
-  auto* adapter = dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
-  if (adapter == nullptr) {
-    throw std::runtime_error("active session is not a llama session");
-  }
-  adapter->ResetConversation();
-  std::cout << "reset " << name << "\n";
+  if (backend == "onnx-llm") {
+#ifdef MOSAICVRAM_ENABLE_ONNX
+    if (session->adapter == nullptr) {
+      std::cout << "reset " << name << "\n";
+      return;
+    }
+    auto* adapter =
+        dynamic_cast<OnnxLlmResidencyAdapter*>(session->adapter.get());
+    if (adapter == nullptr) {
+      throw std::runtime_error("active session is not an ONNX session");
+    }
+    adapter->ResetConversation();
+    std::cout << "reset " << name << "\n";
+    return;
 #else
-  throw std::runtime_error("CLI reset requires a build with llama.cpp enabled");
-#endif  // MOSAICVRAM_ENABLE_LLAMA
+    throw std::runtime_error("CLI reset requires a build with ONNX enabled");
+#endif  // MOSAICVRAM_ENABLE_ONNX
+  }
+
+  throw std::runtime_error("unsupported backend for reset: " + backend);
 }
 
 void CliRuntime::ChatText(const std::string& text) {
@@ -792,7 +815,11 @@ void ExecuteCommand(const ConfigLine& line, CliRuntime* runtime,
     return;
   }
   if (line.kind == "/reset") {
-    runtime->Reset(runtime->ResolveName(line.positional));
+    if (line.positional.empty()) {
+      throw std::runtime_error(
+          "missing session argument; use /reset <session>");
+    }
+    runtime->Reset(line.positional.front());
     return;
   }
   throw std::runtime_error("unknown command: " + line.kind);

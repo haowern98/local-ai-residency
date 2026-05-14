@@ -275,6 +275,19 @@ void OnnxLlmResidencyAdapter::Load() {
   residency_state_ = ResidencyState::kResident;
 }
 
+void OnnxLlmResidencyAdapter::ResetConversation() {
+  FreeCache();
+  if (session_ == nullptr) {
+    residency_state_ = ResidencyState::kModelEvicted;
+    return;
+  }
+  if (kv_tensors_.empty()) {
+    DiscoverModelIo();
+  }
+  AllocateInitialCache();
+  residency_state_ = ResidencyState::kResident;
+}
+
 void OnnxLlmResidencyAdapter::PrefillPrompt() {
   Timer timer;
   ValidateReadyForDecode();

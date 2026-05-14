@@ -72,6 +72,7 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   OnnxLlmResidencyAdapter& operator=(const OnnxLlmResidencyAdapter&) = delete;
 
   void Load();
+  void ResetConversation();
   void PrefillPrompt();
   void CaptureBaselineNextToken();
   std::vector<int64_t> GenerateContinuationTokens(
