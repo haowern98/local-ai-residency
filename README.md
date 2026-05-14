@@ -125,7 +125,17 @@ on `PATH`.
 
 ## Usage
 
-The main publishable interface is `residency-run`:
+For interactive llama.cpp use, start the CLI:
+
+```text
+mosaicvram.exe cli
+```
+
+By default, the CLI reads `sessions.txt` from the current directory. Edit that
+file manually, then use slash commands such as `/sessions`, `/use llama`,
+`/chat`, `/save`, `/evict`, and `/restore`. See [docs/CLI.md](docs/CLI.md).
+
+For reproducible residency validation, use `residency-run`:
 
 ```text
 mosaicvram.exe residency-run --plan path\to\plan.txt

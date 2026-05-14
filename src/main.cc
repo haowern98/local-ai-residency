@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "commands/alloc_smoke.h"
+#include "commands/cli_command.h"
 #include "commands/residency_run.h"
 #include "commands/run_command.h"
 
@@ -23,6 +24,7 @@ void PrintUsage(std::string_view program_name) {
 #ifdef MOSAICVRAM_ENABLE_LLAMA
             << "  llama-state-smoke  Prove llama.cpp warm-state restore\n"
 #endif  // MOSAICVRAM_ENABLE_LLAMA
+            << "  cli          Start the interactive MosaicVRAM CLI\n"
             << "  residency-run  Execute a residency plan\n"
             << "  run          Run a real local-AI backend\n"
             << "  version    Print MosaicVRAM version\n";
@@ -44,6 +46,9 @@ int Run(int argc, char** argv) {
   }
   if (command == "residency-run") {
     return RunResidencyRunCommand(argc - 2, argv + 2);
+  }
+  if (command == "cli") {
+    return RunCliCommand(argc - 2, argv + 2);
   }
 #ifdef MOSAICVRAM_ENABLE_LLAMA
   if (command == "llama-state-smoke") {

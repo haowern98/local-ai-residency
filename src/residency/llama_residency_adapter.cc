@@ -4,13 +4,17 @@
 
 #include <cuda_runtime_api.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "cuda/cuda_error.h"
 #include "util/timer.h"
@@ -48,6 +52,73 @@ void AddTokenToBatch(llama_batch* batch, llama_token token, llama_pos position,
   batch->n_tokens++;
 }
 
+bool IsBlank(std::string_view text) {
+  for (char c : text) {
+    if (!std::isspace(static_cast<unsigned char>(c))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::size_t FindFirstStopString(std::string_view text,
+                                const std::vector<std::string>& stop_strings) {
+  std::size_t first = std::string_view::npos;
+  for (const std::string& stop : stop_strings) {
+    const std::size_t found = text.find(stop);
+    if (found != std::string_view::npos &&
+        (first == std::string_view::npos || found < first)) {
+      first = found;
+    }
+  }
+  return first;
+}
+
+bool CanApplyChatTemplate(const char* tmpl) {
+  const llama_chat_message messages[1] = {{"user", "hello"}};
+  return llama_chat_apply_template(tmpl, messages, 1, /*add_ass=*/true, nullptr,
+                                   0) > 0;
+}
+
+void AddUniqueTemplate(std::vector<const char*>* templates,
+                       const char* candidate) {
+  if (std::find(templates->begin(), templates->end(), candidate) ==
+      templates->end()) {
+    templates->push_back(candidate);
+  }
+}
+
+std::vector<const char*> FallbackChatTemplates(const char* model_template) {
+  std::vector<const char*> templates;
+  const std::string_view text = model_template == nullptr
+                                    ? std::string_view()
+                                    : std::string_view(model_template);
+
+  if (text.find("<start_of_turn>") != std::string_view::npos ||
+      text.find("start_of_turn") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "gemma");
+  }
+  if (text.find("<|start_header_id|>") != std::string_view::npos ||
+      text.find("<|eot_id|>") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "llama3");
+  }
+  if (text.find("<|im_start|>") != std::string_view::npos ||
+      text.find("<|im_end|>") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "chatml");
+  }
+  if (text.find("[INST]") != std::string_view::npos) {
+    AddUniqueTemplate(&templates, "mistral-v7");
+    AddUniqueTemplate(&templates, "mistral-v1");
+  }
+
+  AddUniqueTemplate(&templates, "gemma");
+  AddUniqueTemplate(&templates, "llama3");
+  AddUniqueTemplate(&templates, "chatml");
+  AddUniqueTemplate(&templates, "mistral-v7");
+  AddUniqueTemplate(&templates, "mistral-v1");
+  return templates;
+}
+
 }  // namespace
 
 LlamaResidencyAdapter::BackendLifetime::BackendLifetime() {
@@ -68,6 +139,13 @@ void LlamaResidencyAdapter::ContextDeleter::operator()(
     llama_context* context) const {
   if (context != nullptr) {
     llama_free(context);
+  }
+}
+
+void LlamaResidencyAdapter::SamplerDeleter::operator()(
+    llama_sampler* sampler) const {
+  if (sampler != nullptr) {
+    llama_sampler_free(sampler);
   }
 }
 
@@ -104,7 +182,21 @@ void LlamaResidencyAdapter::CreateContext() {
     throw std::runtime_error("cannot create llama context without model");
   }
   context_ = MakeContext();
+  llama_sampler_chain_params sampler_params =
+      llama_sampler_chain_default_params();
+  chat_sampler_.reset(llama_sampler_chain_init(sampler_params));
+  if (chat_sampler_ == nullptr) {
+    throw std::runtime_error("failed to create llama sampler chain");
+  }
+  llama_sampler_chain_add(chat_sampler_.get(),
+                          llama_sampler_init_min_p(options_.chat_min_p, 1));
+  llama_sampler_chain_add(chat_sampler_.get(),
+                          llama_sampler_init_temp(options_.chat_temperature));
+  llama_sampler_chain_add(chat_sampler_.get(),
+                          llama_sampler_init_dist(options_.chat_seed));
   ResetDecodePosition();
+  chat_messages_.clear();
+  chat_formatted_length_ = 0;
   residency_state_ = ResidencyState::kResident;
 }
 
@@ -153,6 +245,8 @@ BackendStateSnapshot& LlamaResidencyAdapter::SaveState() {
 
   snapshot_.source_residency = residency_state_;
   snapshot_decode_position_ = next_decode_position_;
+  snapshot_chat_messages_ = chat_messages_;
+  snapshot_chat_formatted_length_ = chat_formatted_length_;
   report_.full_state_bytes = snapshot_.full_state_bytes;
   report_.sequence_state_bytes = snapshot_.sequence_state_bytes;
   report_.save_state_ms = timer.ElapsedMs();
@@ -197,8 +291,21 @@ void LlamaResidencyAdapter::CheckSameContextClearAndRestore() {
       report_.baseline_next_token == report_.same_context_restore_next_token;
 }
 
+void LlamaResidencyAdapter::ResetConversation() {
+  if (context_ != nullptr) {
+    llama_memory_clear(llama_get_memory(context_.get()), /*data=*/true);
+  }
+  if (chat_sampler_ != nullptr) {
+    llama_sampler_reset(chat_sampler_.get());
+  }
+  ResetDecodePosition();
+  chat_messages_.clear();
+  chat_formatted_length_ = 0;
+}
+
 void LlamaResidencyAdapter::EvictContext() {
   Timer timer;
+  chat_sampler_.reset();
   context_.reset();
   residency_state_ = model_ == nullptr ? ResidencyState::kModelEvicted
                                        : ResidencyState::kContextEvicted;
@@ -227,6 +334,7 @@ void LlamaResidencyAdapter::CheckRecreatedSequenceRestore() {
 
 void LlamaResidencyAdapter::EvictModel() {
   Timer timer;
+  chat_sampler_.reset();
   context_.reset();
   model_.reset();
   vocab_ = nullptr;
@@ -269,16 +377,14 @@ void LlamaResidencyAdapter::CheckModelReloadedSequenceRestore() {
       report_.baseline_next_token == report_.model_reloaded_sequence_next_token;
 }
 
-void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
-    const std::string& text, int max_tokens, const std::string& expected_text) {
-  Timer timer;
+std::string LlamaResidencyAdapter::GenerateContinuation(const std::string& text,
+                                                        int max_tokens) {
   if (max_tokens <= 0) {
     throw std::runtime_error("max_tokens must be positive");
   }
   if (context_ == nullptr) {
-    CreateContext();
+    throw std::runtime_error("cannot chat with llama session before load");
   }
-  RestoreFullState();
 
   std::vector<llama_token> continuation = TokenizeText(text,
                                                        /*add_special=*/false);
@@ -287,7 +393,7 @@ void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
   std::vector<llama_token> generated_tokens;
   generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
   for (int i = 0; i < max_tokens; ++i) {
-    const llama_token token = GreedyToken();
+    const llama_token token = SampleToken();
     if (llama_vocab_is_eog(vocab_, token)) {
       break;
     }
@@ -298,6 +404,72 @@ void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
 
   report_.generated_tokens = generated_tokens.size();
   report_.generated_text = DetokenizeTokens(generated_tokens);
+  return report_.generated_text;
+}
+
+std::string LlamaResidencyAdapter::GenerateChatReply(
+    const std::string& user_text, int max_tokens) {
+  if (max_tokens <= 0) {
+    throw std::runtime_error("max_tokens must be positive");
+  }
+  if (context_ == nullptr) {
+    throw std::runtime_error("cannot chat with llama session before load");
+  }
+  if (IsBlank(user_text)) {
+    throw std::runtime_error("chat message is empty");
+  }
+
+  chat_messages_.push_back({"user", user_text});
+  const std::string formatted = ApplyChatTemplate(/*add_assistant=*/true);
+  if (chat_formatted_length_ < 0 ||
+      chat_formatted_length_ > static_cast<int32_t>(formatted.size())) {
+    throw std::runtime_error("invalid llama chat template cursor");
+  }
+
+  const std::string prompt_delta =
+      formatted.substr(static_cast<std::size_t>(chat_formatted_length_));
+  const bool is_first_chat_decode = next_decode_position_ == 0;
+  std::vector<llama_token> prompt_tokens =
+      TokenizeText(prompt_delta, is_first_chat_decode,
+                   /*parse_special=*/true);
+  DecodeTokens(prompt_tokens);
+
+  std::vector<llama_token> generated_tokens;
+  generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
+  std::string generated_text;
+  for (int i = 0; i < max_tokens; ++i) {
+    const llama_token token = SampleToken();
+    if (llama_vocab_is_eog(vocab_, token)) {
+      break;
+    }
+    generated_tokens.push_back(token);
+    generated_text += DetokenizeTokens({token});
+    const std::size_t stop =
+        FindFirstStopString(generated_text, options_.stop_strings);
+    if (stop != std::string::npos) {
+      generated_text.resize(stop);
+      break;
+    }
+    std::vector<llama_token> next = {token};
+    DecodeTokens(next);
+  }
+
+  report_.generated_tokens = generated_tokens.size();
+  report_.generated_text = generated_text;
+  chat_messages_.push_back({"assistant", report_.generated_text});
+  chat_formatted_length_ =
+      static_cast<int32_t>(formatted.size() + report_.generated_text.size());
+  return report_.generated_text;
+}
+
+void LlamaResidencyAdapter::RestoreAndGenerateContinuation(
+    const std::string& text, int max_tokens, const std::string& expected_text) {
+  Timer timer;
+  if (context_ == nullptr) {
+    CreateContext();
+  }
+  RestoreFullState();
+  GenerateContinuation(text, max_tokens);
   report_.generated_contains_expected =
       !expected_text.empty() &&
       report_.generated_text.find(expected_text) != std::string::npos;
@@ -377,11 +549,10 @@ std::vector<llama_token> LlamaResidencyAdapter::TokenizePrompt() const {
 }
 
 std::vector<llama_token> LlamaResidencyAdapter::TokenizeText(
-    const std::string& text, bool add_special) const {
+    const std::string& text, bool add_special, bool parse_special) const {
   const int32_t text_size = static_cast<int32_t>(text.size());
-  int32_t token_count =
-      llama_tokenize(vocab_, text.c_str(), text_size, nullptr, 0, add_special,
-                     /*parse_special=*/false);
+  int32_t token_count = llama_tokenize(vocab_, text.c_str(), text_size, nullptr,
+                                       0, add_special, parse_special);
   if (token_count == INT32_MIN) {
     throw std::runtime_error("llama tokenization overflow");
   }
@@ -391,8 +562,7 @@ std::vector<llama_token> LlamaResidencyAdapter::TokenizeText(
 
   std::vector<llama_token> tokens(static_cast<std::size_t>(token_count));
   token_count = llama_tokenize(vocab_, text.c_str(), text_size, tokens.data(),
-                               token_count, add_special,
-                               /*parse_special=*/false);
+                               token_count, add_special, parse_special);
   if (token_count < 0) {
     throw std::runtime_error("llama tokenization failed");
   }
@@ -490,6 +660,88 @@ std::string LlamaResidencyAdapter::DetokenizeTokens(
   return text;
 }
 
+llama_token LlamaResidencyAdapter::SampleToken() {
+  if (context_ == nullptr || chat_sampler_ == nullptr) {
+    throw std::runtime_error("llama sampler is unavailable");
+  }
+  const llama_token token =
+      llama_sampler_sample(chat_sampler_.get(), context_.get(), -1);
+  llama_sampler_accept(chat_sampler_.get(), token);
+  return token;
+}
+
+std::string LlamaResidencyAdapter::ResolveChatTemplate() const {
+  if (chat_template_resolved_) {
+    return resolved_chat_template_;
+  }
+
+  const auto resolve = [this](std::string value) -> std::string {
+    resolved_chat_template_ = std::move(value);
+    chat_template_resolved_ = true;
+    return resolved_chat_template_;
+  };
+
+  if (!options_.chat_template.empty()) {
+    if (!CanApplyChatTemplate(options_.chat_template.c_str())) {
+      throw std::runtime_error("configured chat_template is not supported");
+    }
+    return resolve(options_.chat_template);
+  }
+
+  const char* model_template = llama_model_chat_template(model_.get(), nullptr);
+  if (model_template != nullptr && CanApplyChatTemplate(model_template)) {
+    return resolve("");
+  }
+
+  for (const char* candidate : FallbackChatTemplates(model_template)) {
+    if (CanApplyChatTemplate(candidate)) {
+      const std::string resolved = resolve(candidate);
+      std::cout << "chat template: " << resolved << "\n";
+      return resolved;
+    }
+  }
+
+  throw std::runtime_error(
+      "failed to detect a supported llama chat template; set chat_template in "
+      "sessions.txt");
+}
+
+std::string LlamaResidencyAdapter::ApplyChatTemplate(bool add_assistant) const {
+  if (model_ == nullptr) {
+    throw std::runtime_error("cannot apply llama chat template without model");
+  }
+
+  std::vector<llama_chat_message> messages;
+  messages.reserve(chat_messages_.size());
+  for (const LlamaChatMessage& message : chat_messages_) {
+    messages.push_back({message.role.c_str(), message.content.c_str()});
+  }
+
+  const std::string resolved_template = ResolveChatTemplate();
+  const char* tmpl = resolved_template.empty()
+                         ? llama_model_chat_template(model_.get(), nullptr)
+                         : resolved_template.c_str();
+
+  int32_t length = llama_chat_apply_template(
+      tmpl, messages.data(), messages.size(), add_assistant, nullptr, 0);
+  if (length < 0) {
+    throw std::runtime_error(
+        "failed to apply llama chat template; set chat_template in "
+        "sessions.txt");
+  }
+  std::string formatted(static_cast<std::size_t>(length), '\0');
+  length = llama_chat_apply_template(tmpl, messages.data(), messages.size(),
+                                     add_assistant, formatted.data(),
+                                     static_cast<int32_t>(formatted.size()));
+  if (length < 0 || length > static_cast<int32_t>(formatted.size())) {
+    throw std::runtime_error(
+        "failed to apply llama chat template; set chat_template in "
+        "sessions.txt");
+  }
+  formatted.resize(static_cast<std::size_t>(length));
+  return formatted;
+}
+
 std::size_t LlamaResidencyAdapter::RestoreFullState() {
   if (snapshot_.full_state.empty()) {
     throw std::runtime_error("full llama state snapshot is empty");
@@ -500,6 +752,8 @@ std::size_t LlamaResidencyAdapter::RestoreFullState() {
     throw std::runtime_error("failed to restore full llama state");
   }
   next_decode_position_ = snapshot_decode_position_;
+  chat_messages_ = snapshot_chat_messages_;
+  chat_formatted_length_ = snapshot_chat_formatted_length_;
   return read;
 }
 

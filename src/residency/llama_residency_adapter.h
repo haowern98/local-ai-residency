@@ -7,6 +7,7 @@
 #include <llama.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +25,12 @@ struct LlamaResidencyOptions {
   int gpu_layers = -1;
   int device_index = 0;
   int threads = 8;
+  int chat_max_tokens = 512;
+  float chat_temperature = 0.8f;
+  float chat_min_p = 0.05f;
+  uint32_t chat_seed = LLAMA_DEFAULT_SEED;
+  std::string chat_template;
+  std::vector<std::string> stop_strings;
   llama_seq_id sequence_id = 0;
 };
 
@@ -70,6 +77,11 @@ struct LlamaResidencyReport {
   std::string generated_text;
 };
 
+struct LlamaChatMessage {
+  std::string role;
+  std::string content;
+};
+
 class LlamaResidencyAdapter : public BackendStateAdapter {
  public:
   explicit LlamaResidencyAdapter(LlamaResidencyOptions options);
@@ -90,6 +102,9 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckRecreatedSequenceRestore();
   void CheckModelReloadedFullRestore();
   void CheckModelReloadedSequenceRestore();
+  std::string GenerateContinuation(const std::string& text, int max_tokens);
+  std::string GenerateChatReply(const std::string& user_text, int max_tokens);
+  void ResetConversation();
   void RestoreAndGenerateContinuation(const std::string& text, int max_tokens,
                                       const std::string& expected_text);
 
@@ -124,8 +139,13 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
     void operator()(llama_context* context) const;
   };
 
+  struct SamplerDeleter {
+    void operator()(llama_sampler* sampler) const;
+  };
+
   using ModelPtr = std::unique_ptr<llama_model, ModelDeleter>;
   using ContextPtr = std::unique_ptr<llama_context, ContextDeleter>;
+  using SamplerPtr = std::unique_ptr<llama_sampler, SamplerDeleter>;
 
   static void QuietLog(ggml_log_level level, const char* text, void* user_data);
 
@@ -133,10 +153,14 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   ContextPtr MakeContext() const;
   std::vector<llama_token> TokenizePrompt() const;
   std::vector<llama_token> TokenizeText(const std::string& text,
-                                        bool add_special) const;
+                                        bool add_special,
+                                        bool parse_special = false) const;
   void DecodeTokens(const std::vector<llama_token>& tokens);
   llama_token GreedyToken() const;
+  llama_token SampleToken();
   std::string DetokenizeTokens(const std::vector<llama_token>& tokens) const;
+  std::string ResolveChatTemplate() const;
+  std::string ApplyChatTemplate(bool add_assistant) const;
   std::size_t RestoreFullState();
   std::size_t RestoreSequenceState();
   void ResetDecodePosition();
@@ -145,12 +169,19 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   BackendLifetime backend_lifetime_;
   ModelPtr model_;
   ContextPtr context_;
+  SamplerPtr chat_sampler_;
   const llama_vocab* vocab_ = nullptr;
   BackendStateSnapshot snapshot_;
   LlamaResidencyReport report_;
+  std::vector<LlamaChatMessage> chat_messages_;
+  std::vector<LlamaChatMessage> snapshot_chat_messages_;
   ResidencyState residency_state_ = ResidencyState::kUnloaded;
   llama_pos next_decode_position_ = 0;
   llama_pos snapshot_decode_position_ = 0;
+  int32_t chat_formatted_length_ = 0;
+  int32_t snapshot_chat_formatted_length_ = 0;
+  mutable bool chat_template_resolved_ = false;
+  mutable std::string resolved_chat_template_;
 };
 
 }  // namespace mosaicvram
