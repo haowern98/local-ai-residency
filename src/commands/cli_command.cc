@@ -163,13 +163,20 @@ void ValidateSessionSpec(SessionSpec* spec) {
     spec->issue = "missing required key: backend";
     return;
   }
-  if (backend->second != "llama") {
-    spec->issue = "CLI phase currently supports backend=llama only";
+  if (backend->second != "llama" && backend->second != "onnx-llm") {
+    spec->issue = "unsupported backend: " + backend->second;
     return;
   }
   const auto model = spec->values.find("model");
   if (model == spec->values.end() || model->second.empty()) {
     spec->issue = "missing required key: model";
+    return;
+  }
+  if (backend->second == "onnx-llm") {
+    const auto tokenizer = spec->values.find("tokenizer");
+    if (tokenizer == spec->values.end() || tokenizer->second.empty()) {
+      spec->issue = "missing required key: tokenizer";
+    }
   }
 }
 
@@ -278,7 +285,11 @@ void CliRuntime::ReloadConfig() {
         << "  " << config_path_ << "\n\n"
         << "Format:\n"
         << "  session llama backend=llama model=\"C:\\path\\to\\model.gguf\" "
-           "ctx=16384 batch=512 gpu_layers=-1 device=0\n";
+           "ctx=16384 batch=512 gpu_layers=-1 device=0\n"
+        << "  session onnx backend=onnx-llm "
+           "model=\"C:\\path\\to\\model.onnx\" "
+           "tokenizer=\"C:\\path\\to\\tokenizer_dir\" prefill_chunk=512 "
+           "device=0\n";
     return;
   }
 
@@ -306,9 +317,6 @@ void CliRuntime::ReloadConfig() {
                 << session.spec.name << "\n";
       continue;
     }
-    if (active_session_.empty()) {
-      active_session_ = session.spec.name;
-    }
     sessions_.emplace(session.spec.name, std::move(session));
   }
   std::cout << "loaded config: " << config_path_ << "\n";
@@ -322,7 +330,8 @@ void CliRuntime::PrintSessions() const {
   }
   std::cout << "session backend residency issue\n";
   for (const auto& [name, session] : sessions_) {
-    const std::string marker = name == active_session_ ? "*" : " ";
+    const std::string marker =
+        !active_session_.empty() && name == active_session_ ? "*" : " ";
     std::cout << marker << name << " "
               << OptionalString(session.spec, "backend", "-") << " "
               << ResidencyText(session) << " "
@@ -407,6 +416,10 @@ void CliRuntime::Restore(const std::string& name) {
 void CliRuntime::Reset(const std::string& name) {
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
+  const std::string backend = RequiredValue(session->spec, "backend");
+  if (backend != "llama") {
+    throw std::runtime_error("ONNX CLI reset is not implemented yet");
+  }
   if (session->adapter == nullptr) {
     std::cout << "reset " << name << "\n";
     return;
@@ -428,6 +441,10 @@ void CliRuntime::ChatText(const std::string& text) {
   const std::string name = ResolveName({});
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
+  const std::string backend = RequiredValue(session->spec, "backend");
+  if (backend != "llama") {
+    throw std::runtime_error("ONNX CLI chat is not implemented yet");
+  }
   EnsureLoaded(name, session);
 
 #ifdef MOSAICVRAM_ENABLE_LLAMA
@@ -483,6 +500,10 @@ void CliRuntime::EnsureLoaded(const std::string& name, CliSession* session) {
     RegisterAdapter(session);
   }
   const ResidencyState state = session->adapter->residency_state();
+  const std::string backend = RequiredValue(session->spec, "backend");
+  if (backend != "llama") {
+    throw std::runtime_error("ONNX CLI lifecycle is not implemented yet");
+  }
 #ifdef MOSAICVRAM_ENABLE_LLAMA
   auto* adapter = dynamic_cast<LlamaResidencyAdapter*>(session->adapter.get());
   if (adapter == nullptr) {
@@ -512,6 +533,14 @@ void CliRuntime::EnsureLoaded(const std::string& name, CliSession* session) {
 }
 
 void CliRuntime::RegisterAdapter(CliSession* session) {
+  const std::string backend = RequiredValue(session->spec, "backend");
+  if (backend == "onnx-llm") {
+    throw std::runtime_error("ONNX CLI lifecycle is not implemented yet");
+  }
+  if (backend != "llama") {
+    throw std::runtime_error("unsupported backend: " + backend);
+  }
+
 #ifdef MOSAICVRAM_ENABLE_LLAMA
   LlamaResidencyOptions options;
   options.session_id = session->spec.id;
