@@ -1,5 +1,6 @@
 #include "commands/cli_command.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cstdint>
@@ -184,6 +185,15 @@ std::string ApplyStopStrings(std::string text,
     text.resize(stop);
   }
   return text;
+}
+
+void AppendMissingStrings(const std::vector<std::string>& values,
+                          std::vector<std::string>* target) {
+  for (const std::string& value : values) {
+    if (std::find(target->begin(), target->end(), value) == target->end()) {
+      target->push_back(value);
+    }
+  }
 }
 
 void ValidateSessionSpec(SessionSpec* spec) {
@@ -502,12 +512,15 @@ void CliRuntime::ChatText(const std::string& text) {
     if (max_tokens <= 0) {
       throw std::runtime_error("max_tokens must be greater than zero");
     }
+    const TokenizerChatPrompt chat_prompt =
+        ApplyTokenizerChatTemplate(tokenizer_path, text);
     const std::vector<int64_t> input_tokens =
-        TokenizeWithTokenizerJson(tokenizer_path, text);
+        TokenizeWithTokenizerJson(tokenizer_path, chat_prompt.text);
     const std::vector<int64_t> generated_tokens =
         adapter->GenerateContinuationTokens(input_tokens, max_tokens);
-    const std::vector<std::string> stop_strings =
+    std::vector<std::string> stop_strings =
         SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
+    AppendMissingStrings(chat_prompt.stop_strings, &stop_strings);
     const std::string generated = ApplyStopStrings(
         DecodeWithTokenizerJson(tokenizer_path, generated_tokens),
         stop_strings);
