@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace mosaicvram {
@@ -255,6 +256,72 @@ bool Contains(std::string_view text, std::string_view needle) {
   return text.find(needle) != std::string_view::npos;
 }
 
+std::optional<std::string> ExtractSingleQuotedLiteralContaining(
+    std::string_view text, std::string_view needle) {
+  std::optional<std::string> best;
+  std::size_t search_pos = 0;
+  while (search_pos < text.size()) {
+    const std::size_t quote_pos = text.find('\'', search_pos);
+    if (quote_pos == std::string_view::npos) {
+      return best;
+    }
+
+    std::string literal;
+    bool escaped = false;
+    for (std::size_t i = quote_pos + 1; i < text.size(); ++i) {
+      const char current = text[i];
+      if (escaped) {
+        switch (current) {
+          case '\\':
+          case '\'':
+            literal.push_back(current);
+            break;
+          case 'n':
+            literal.push_back('\n');
+            break;
+          default:
+            literal.push_back(current);
+            break;
+        }
+        escaped = false;
+        continue;
+      }
+      if (current == '\\') {
+        escaped = true;
+        continue;
+      }
+      if (current == '\'') {
+        if (Contains(literal, needle) &&
+            (!best.has_value() || literal.size() < best->size())) {
+          best = literal;
+        }
+        search_pos = i + 1;
+        break;
+      }
+      literal.push_back(current);
+    }
+    if (escaped) {
+      return std::nullopt;
+    }
+  }
+  return best;
+}
+
+void AppendChatMessage(const TokenizerChatMessage& message,
+                       const std::string& user_prefix,
+                       const std::string& assistant_prefix,
+                       const std::string& suffix, std::string* output) {
+  if (message.role == "user") {
+    *output += user_prefix;
+  } else if (message.role == "assistant") {
+    *output += assistant_prefix;
+  } else {
+    throw std::runtime_error("unsupported chat message role: " + message.role);
+  }
+  *output += message.content;
+  *output += suffix;
+}
+
 }  // namespace
 
 std::vector<int64_t> TokenizeWithTokenizerJson(
@@ -335,6 +402,206 @@ TokenizerChatPrompt ApplyTokenizerChatTemplate(
       Contains(chat_template, "<|assistant|>")) {
     return TokenizerChatPrompt{
         "<|user|>\n" + user_text + "<|end|>\n<|assistant|>\n",
+        {"<|end|>", "<|user|>", "<|assistant|>"}};
+  }
+
+  throw std::runtime_error(
+      "tokenizer_config.json chat_template is not supported by the native ONNX "
+      "chat template adapter");
+}
+
+TokenizerChatPrompt ApplyTokenizerChatTemplate(
+    const std::string& tokenizer_path,
+    const std::vector<TokenizerChatMessage>& messages, bool add_assistant) {
+  if (messages.empty()) {
+    throw std::runtime_error("chat template requires at least one message");
+  }
+
+  const std::string chat_template =
+      RequiredTokenizerConfigString(tokenizer_path, "chat_template");
+  const std::string bos_token =
+      TokenizerConfigString(tokenizer_path, "bos_token", "");
+
+  const std::optional<std::string> literal_user_token =
+      ExtractSingleQuotedLiteralContaining(chat_template, "User");
+  const std::optional<std::string> literal_assistant_token =
+      ExtractSingleQuotedLiteralContaining(chat_template, "Assistant");
+  if (literal_user_token.has_value() && literal_assistant_token.has_value() &&
+      Contains(chat_template, "message['content']")) {
+    const std::string eos_token =
+        TokenizerConfigString(tokenizer_path, "eos_token", "");
+    std::string text = bos_token;
+    for (const TokenizerChatMessage& message : messages) {
+      if (message.role == "user") {
+        text += *literal_user_token;
+        text += message.content;
+      } else if (message.role == "assistant") {
+        text += *literal_assistant_token;
+        text += message.content;
+        text += eos_token;
+      } else {
+        throw std::runtime_error("unsupported chat message role: " +
+                                 message.role);
+      }
+    }
+    if (add_assistant) {
+      text += *literal_assistant_token;
+    }
+
+    std::vector<std::string> stop_strings;
+    if (!eos_token.empty()) {
+      stop_strings.push_back(eos_token);
+    }
+    stop_strings.push_back(*literal_user_token);
+    stop_strings.push_back(*literal_assistant_token);
+    return TokenizerChatPrompt{std::move(text), std::move(stop_strings)};
+  }
+
+  if (Contains(chat_template, "<ï½œUserï½œ>") &&
+      Contains(chat_template, "<ï½œAssistantï½œ>")) {
+    std::string text = bos_token;
+    for (const TokenizerChatMessage& message : messages) {
+      AppendChatMessage(message, "<ï½œUserï½œ>", "<ï½œAssistantï½œ>", "",
+                        &text);
+    }
+    if (add_assistant) {
+      text += "<ï½œAssistantï½œ>";
+    }
+    return TokenizerChatPrompt{std::move(text),
+                               {"<ï½œendâ–ofâ–sentenceï½œ>",
+                                "<ï½œUserï½œ>", "<ï½œAssistantï½œ>"}};
+  }
+
+  if (Contains(chat_template, "<start_of_turn>") &&
+      Contains(chat_template, "<end_of_turn>")) {
+    std::string text = bos_token;
+    for (const TokenizerChatMessage& message : messages) {
+      AppendChatMessage(message, "<start_of_turn>user\n",
+                        "<start_of_turn>model\n", "<end_of_turn>\n", &text);
+    }
+    if (add_assistant) {
+      text += "<start_of_turn>model\n";
+    }
+    return TokenizerChatPrompt{std::move(text),
+                               {"<end_of_turn>", "<start_of_turn>"}};
+  }
+
+  if (Contains(chat_template, "<|im_start|>") &&
+      Contains(chat_template, "<|im_end|>")) {
+    std::string text;
+    for (const TokenizerChatMessage& message : messages) {
+      AppendChatMessage(message, "<|im_start|>user\n",
+                        "<|im_start|>assistant\n", "<|im_end|>\n", &text);
+    }
+    if (add_assistant) {
+      text += "<|im_start|>assistant\n";
+    }
+    return TokenizerChatPrompt{std::move(text), {"<|im_end|>", "<|im_start|>"}};
+  }
+
+  if (Contains(chat_template, "<|start_header_id|>") &&
+      Contains(chat_template, "<|end_header_id|>")) {
+    std::string text = bos_token;
+    for (const TokenizerChatMessage& message : messages) {
+      AppendChatMessage(message, "<|start_header_id|>user<|end_header_id|>\n\n",
+                        "<|start_header_id|>assistant<|end_header_id|>\n\n",
+                        "<|eot_id|>", &text);
+    }
+    if (add_assistant) {
+      text += "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    }
+    return TokenizerChatPrompt{std::move(text),
+                               {"<|eot_id|>", "<|start_header_id|>"}};
+  }
+
+  if (Contains(chat_template, "<|user|>") &&
+      Contains(chat_template, "<|assistant|>")) {
+    std::string text;
+    for (const TokenizerChatMessage& message : messages) {
+      AppendChatMessage(message, "<|user|>\n", "<|assistant|>\n", "<|end|>\n",
+                        &text);
+    }
+    if (add_assistant) {
+      text += "<|assistant|>\n";
+    }
+    return TokenizerChatPrompt{std::move(text),
+                               {"<|end|>", "<|user|>", "<|assistant|>"}};
+  }
+
+  throw std::runtime_error(
+      "tokenizer_config.json chat_template is not supported by the native ONNX "
+      "chat template adapter");
+}
+
+TokenizerChatPrompt ApplyTokenizerChatTurnTemplate(
+    const std::string& tokenizer_path, const std::string& user_text,
+    bool first_turn) {
+  const std::string chat_template =
+      RequiredTokenizerConfigString(tokenizer_path, "chat_template");
+  const std::string bos_token =
+      TokenizerConfigString(tokenizer_path, "bos_token", "");
+
+  const std::optional<std::string> literal_user_token =
+      ExtractSingleQuotedLiteralContaining(chat_template, "User");
+  const std::optional<std::string> literal_assistant_token =
+      ExtractSingleQuotedLiteralContaining(chat_template, "Assistant");
+  if (literal_user_token.has_value() && literal_assistant_token.has_value() &&
+      Contains(chat_template, "message['content']")) {
+    const std::string eos_token =
+        TokenizerConfigString(tokenizer_path, "eos_token", "");
+    std::vector<std::string> stop_strings;
+    if (!eos_token.empty()) {
+      stop_strings.push_back(eos_token);
+    }
+    stop_strings.push_back(*literal_user_token);
+    stop_strings.push_back(*literal_assistant_token);
+    return TokenizerChatPrompt{
+        (first_turn ? bos_token : eos_token) + *literal_user_token + user_text +
+            *literal_assistant_token,
+        std::move(stop_strings)};
+  }
+
+  if (Contains(chat_template, "<ï½œUserï½œ>") &&
+      Contains(chat_template, "<ï½œAssistantï½œ>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? bos_token : "<ï½œendâ–ofâ–sentenceï½œ>") +
+            std::string("<ï½œUserï½œ>") + user_text + "<ï½œAssistantï½œ>",
+        {"<ï½œendâ–ofâ–sentenceï½œ>", "<ï½œUserï½œ>", "<ï½œAssistantï½œ>"}};
+  }
+
+  if (Contains(chat_template, "<start_of_turn>") &&
+      Contains(chat_template, "<end_of_turn>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? bos_token : "<end_of_turn>\n") +
+            std::string("<start_of_turn>user\n") + user_text +
+            "<end_of_turn>\n<start_of_turn>model\n",
+        {"<end_of_turn>", "<start_of_turn>"}};
+  }
+
+  if (Contains(chat_template, "<|im_start|>") &&
+      Contains(chat_template, "<|im_end|>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? "" : "<|im_end|>\n") +
+            std::string("<|im_start|>user\n") + user_text +
+            "<|im_end|>\n<|im_start|>assistant\n",
+        {"<|im_end|>", "<|im_start|>"}};
+  }
+
+  if (Contains(chat_template, "<|start_header_id|>") &&
+      Contains(chat_template, "<|end_header_id|>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? bos_token : "<|eot_id|>") +
+            std::string("<|start_header_id|>user<|end_header_id|>\n\n") +
+            user_text +
+            "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+        {"<|eot_id|>", "<|start_header_id|>"}};
+  }
+
+  if (Contains(chat_template, "<|user|>") &&
+      Contains(chat_template, "<|assistant|>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? "" : "<|end|>\n") + std::string("<|user|>\n") +
+            user_text + "<|end|>\n<|assistant|>\n",
         {"<|end|>", "<|user|>", "<|assistant|>"}};
   }
 

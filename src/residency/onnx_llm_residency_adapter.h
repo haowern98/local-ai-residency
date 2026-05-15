@@ -75,6 +75,9 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   void ResetConversation();
   void PrefillPrompt();
   void CaptureBaselineNextToken();
+  std::string GenerateChatReply(const std::string& tokenizer_path,
+                                const std::string& user_text, int max_tokens,
+                                const std::vector<std::string>& stop_strings);
   std::vector<int64_t> GenerateContinuationTokens(
       const std::vector<int64_t>& tokens, int max_tokens);
   std::vector<int64_t> GenerateContinuationTokens(
@@ -128,6 +131,11 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
     std::vector<float> logits;
   };
 
+  struct ChatMessage {
+    std::string role;
+    std::string content;
+  };
+
   void CreateSession(double* elapsed_ms);
   void DiscoverModelIo();
   void AllocateInitialCache();
@@ -155,6 +163,10 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   std::vector<KvTensor> kv_tensors_;
   BackendStateSnapshot snapshot_;
   OnnxLlmResidencyReport report_;
+  std::vector<ChatMessage> chat_messages_;
+  std::vector<ChatMessage> snapshot_chat_messages_;
+  std::vector<int64_t> chat_cache_tokens_;
+  std::vector<int64_t> snapshot_chat_cache_tokens_;
   ResidencyState residency_state_ = ResidencyState::kUnloaded;
 };
 

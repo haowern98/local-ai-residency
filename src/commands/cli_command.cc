@@ -21,10 +21,6 @@
 #include "runtime/config_line.h"
 #include "sampling/logits_sampler.h"
 
-#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
-#include "tokenizer/tokenizers_cpp_adapter.h"
-#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
-
 #ifdef MOSAICVRAM_ENABLE_LLAMA
 #include "residency/llama_residency_adapter.h"
 #endif  // MOSAICVRAM_ENABLE_LLAMA
@@ -166,37 +162,6 @@ std::vector<std::string> SplitCommaSeparated(std::string_view text) {
   return values;
 }
 
-std::size_t FindFirstStopString(std::string_view text,
-                                const std::vector<std::string>& stop_strings) {
-  std::size_t first = std::string_view::npos;
-  for (const std::string& stop : stop_strings) {
-    const std::size_t found = text.find(stop);
-    if (found != std::string_view::npos &&
-        (first == std::string_view::npos || found < first)) {
-      first = found;
-    }
-  }
-  return first;
-}
-
-std::string ApplyStopStrings(std::string text,
-                             const std::vector<std::string>& stop_strings) {
-  const std::size_t stop = FindFirstStopString(text, stop_strings);
-  if (stop != std::string_view::npos) {
-    text.resize(stop);
-  }
-  return text;
-}
-
-void AppendMissingStrings(const std::vector<std::string>& values,
-                          std::vector<std::string>* target) {
-  for (const std::string& value : values) {
-    if (std::find(target->begin(), target->end(), value) == target->end()) {
-      target->push_back(value);
-    }
-  }
-}
-
 void ValidateSamplingOptions(const SamplingOptions& options) {
   if (options.temperature < 0.0f) {
     throw std::runtime_error("temp must be greater than or equal to zero");
@@ -214,22 +179,6 @@ void ValidateSamplingOptions(const SamplingOptions& options) {
     throw std::runtime_error("repeat_penalty must be greater than zero");
   }
 }
-
-#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
-std::vector<std::vector<int64_t>> TokenizeStopStrings(
-    const std::string& tokenizer_path,
-    const std::vector<std::string>& stop_strings) {
-  std::vector<std::vector<int64_t>> sequences;
-  for (const std::string& stop : stop_strings) {
-    std::vector<int64_t> tokens =
-        TokenizeWithTokenizerJson(tokenizer_path, stop);
-    if (!tokens.empty()) {
-      sequences.push_back(std::move(tokens));
-    }
-  }
-  return sequences;
-}
-#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
 
 void ValidateSessionSpec(SessionSpec* spec) {
   spec->issue.clear();
@@ -589,21 +538,10 @@ void CliRuntime::ChatText(const std::string& text) {
     if (max_tokens <= 0) {
       throw std::runtime_error("max_tokens must be greater than zero");
     }
-    const TokenizerChatPrompt chat_prompt =
-        ApplyTokenizerChatTemplate(tokenizer_path, text);
-    const std::vector<int64_t> input_tokens =
-        TokenizeWithTokenizerJson(tokenizer_path, chat_prompt.text);
     std::vector<std::string> stop_strings =
         SplitCommaSeparated(OptionalString(session->spec, "stop_strings", ""));
-    AppendMissingStrings(chat_prompt.stop_strings, &stop_strings);
-    const std::vector<std::vector<int64_t>> stop_token_sequences =
-        TokenizeStopStrings(tokenizer_path, stop_strings);
-    const std::vector<int64_t> generated_tokens =
-        adapter->GenerateContinuationTokens(input_tokens, max_tokens,
-                                            stop_token_sequences);
-    const std::string generated = ApplyStopStrings(
-        DecodeWithTokenizerJson(tokenizer_path, generated_tokens),
-        stop_strings);
+    const std::string generated = adapter->GenerateChatReply(
+        tokenizer_path, text, max_tokens, stop_strings);
     std::cout << name << ": " << generated << "\n";
     return;
 #else

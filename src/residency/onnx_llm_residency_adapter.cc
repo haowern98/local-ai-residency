@@ -6,6 +6,7 @@
 #include <onnxruntime_cxx_api.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
@@ -21,6 +22,10 @@
 
 #include "cuda/cuda_error.h"
 #include "util/timer.h"
+
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+#include "tokenizer/tokenizers_cpp_adapter.h"
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
 
 namespace mosaicvram {
 namespace {
@@ -181,6 +186,16 @@ bool RemoveStopSuffix(const std::vector<std::vector<int64_t>>& stop_sequences,
   return false;
 }
 
+bool HasStopSuffix(const std::vector<std::vector<int64_t>>& stop_sequences,
+                   const std::vector<int64_t>& values) {
+  for (const std::vector<int64_t>& sequence : stop_sequences) {
+    if (EndsWithTokens(values, sequence)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string DecodeFailureMessage(const OnnxLlmResidencyReport& report) {
   std::ostringstream message;
   message << "ONNX LLM decode produced no valid next token"
@@ -210,6 +225,62 @@ int64_t GreedyToken(std::span<const float> logits) {
   }
   return best_token;
 }
+
+bool IsBlank(std::string_view text) {
+  for (const char c : text) {
+    if (!std::isspace(static_cast<unsigned char>(c))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void AppendMissingStrings(const std::vector<std::string>& values,
+                          std::vector<std::string>* target) {
+  for (const std::string& value : values) {
+    if (std::find(target->begin(), target->end(), value) == target->end()) {
+      target->push_back(value);
+    }
+  }
+}
+
+std::size_t FindFirstStopString(std::string_view text,
+                                const std::vector<std::string>& stop_strings) {
+  std::size_t first = std::string_view::npos;
+  for (const std::string& stop : stop_strings) {
+    const std::size_t found = text.find(stop);
+    if (found != std::string_view::npos &&
+        (first == std::string_view::npos || found < first)) {
+      first = found;
+    }
+  }
+  return first;
+}
+
+std::string ApplyStopStrings(std::string text,
+                             const std::vector<std::string>& stop_strings) {
+  const std::size_t stop = FindFirstStopString(text, stop_strings);
+  if (stop != std::string_view::npos) {
+    text.resize(stop);
+  }
+  return text;
+}
+
+#ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+std::vector<std::vector<int64_t>> TokenizeStopStrings(
+    const std::string& tokenizer_path,
+    const std::vector<std::string>& stop_strings) {
+  std::vector<std::vector<int64_t>> sequences;
+  for (const std::string& stop : stop_strings) {
+    std::vector<int64_t> tokens =
+        TokenizeWithTokenizerJson(tokenizer_path, stop);
+    if (!tokens.empty()) {
+      sequences.push_back(std::move(tokens));
+    }
+  }
+  return sequences;
+}
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
 
 }  // namespace
 
@@ -271,11 +342,15 @@ void OnnxLlmResidencyAdapter::Load() {
   report_.initial_session_load_ms = load_ms;
   DiscoverModelIo();
   cache_length_ = 0;
+  chat_messages_.clear();
+  chat_cache_tokens_.clear();
   AllocateInitialCache();
   residency_state_ = ResidencyState::kResident;
 }
 
 void OnnxLlmResidencyAdapter::ResetConversation() {
+  chat_messages_.clear();
+  chat_cache_tokens_.clear();
   FreeCache();
   if (session_ == nullptr) {
     residency_state_ = ResidencyState::kModelEvicted;
@@ -346,6 +421,8 @@ BackendStateSnapshot& OnnxLlmResidencyAdapter::SaveState() {
   snapshot_.full_state_bytes = bytes;
   snapshot_.source_residency = residency_state_;
   snapshot_cache_length_ = cache_length_;
+  snapshot_chat_messages_ = chat_messages_;
+  snapshot_chat_cache_tokens_ = chat_cache_tokens_;
   report_.kv_state_bytes = bytes;
   report_.save_state_ms = timer.ElapsedMs();
   return snapshot_;
@@ -400,6 +477,8 @@ void OnnxLlmResidencyAdapter::RestoreState() {
     copied += tensor.cache_buffer.bytes;
   }
   report_.restored_kv_state_bytes = copied;
+  chat_messages_ = snapshot_chat_messages_;
+  chat_cache_tokens_ = snapshot_chat_cache_tokens_;
   residency_state_ = ResidencyState::kResident;
   report_.restore_state_ms = timer.ElapsedMs();
 }
@@ -416,6 +495,79 @@ bool OnnxLlmResidencyAdapter::ResumeCheck() {
                          report_.baseline_next_token == result.next_token;
   report_.resume_check_ms = timer.ElapsedMs();
   return report_.resume_match;
+}
+
+std::string OnnxLlmResidencyAdapter::GenerateChatReply(
+    const std::string& tokenizer_path, const std::string& user_text,
+    int max_tokens, const std::vector<std::string>& stop_strings) {
+#ifndef MOSAICVRAM_ENABLE_TOKENIZER_JSON
+  (void)tokenizer_path;
+  (void)user_text;
+  (void)max_tokens;
+  (void)stop_strings;
+  throw std::runtime_error(
+      "ONNX chat requires tokenizer.json support in this build");
+#else
+  if (max_tokens <= 0) {
+    throw std::runtime_error("max_tokens must be positive");
+  }
+  if (IsBlank(user_text)) {
+    throw std::runtime_error("chat message is empty");
+  }
+  ValidateReadyForDecode();
+
+  if (cache_length_ != static_cast<int64_t>(chat_cache_tokens_.size())) {
+    throw std::runtime_error("ONNX chat cache metadata is out of sync");
+  }
+
+  const TokenizerChatPrompt chat_prompt = ApplyTokenizerChatTurnTemplate(
+      tokenizer_path, user_text, chat_messages_.empty());
+  const std::vector<int64_t> prompt_delta =
+      TokenizeWithTokenizerJson(tokenizer_path, chat_prompt.text);
+
+  std::vector<std::string> combined_stop_strings = stop_strings;
+  AppendMissingStrings(chat_prompt.stop_strings, &combined_stop_strings);
+  const std::vector<std::vector<int64_t>> stop_token_sequences =
+      TokenizeStopStrings(tokenizer_path, combined_stop_strings);
+
+  if (prompt_delta.empty()) {
+    throw std::runtime_error("ONNX chat prompt produced no new tokens");
+  }
+
+  DecodeResult next = RunDecodeStep(prompt_delta, cache_length_, true);
+  chat_cache_tokens_.insert(chat_cache_tokens_.end(), prompt_delta.begin(),
+                            prompt_delta.end());
+
+  LogitsSampler sampler(options_.sampling);
+  std::vector<int64_t> recent_tokens = chat_cache_tokens_;
+  std::vector<int64_t> generated_tokens;
+  generated_tokens.reserve(static_cast<std::size_t>(max_tokens));
+
+  for (int i = 0; i < max_tokens; ++i) {
+    const int64_t sampled_token = sampler.Sample(next.logits, recent_tokens);
+    std::vector<int64_t> candidate_tokens = generated_tokens;
+    candidate_tokens.push_back(sampled_token);
+
+    if (HasStopSuffix(stop_token_sequences, candidate_tokens)) {
+      break;
+    }
+
+    generated_tokens.push_back(sampled_token);
+    recent_tokens.push_back(sampled_token);
+    chat_cache_tokens_.push_back(sampled_token);
+    next = RunDecodeStep({sampled_token}, cache_length_, true);
+  }
+
+  std::string generated_text =
+      DecodeWithTokenizerJson(tokenizer_path, generated_tokens);
+  generated_text =
+      ApplyStopStrings(std::move(generated_text), combined_stop_strings);
+  report_.generated_token_ids = generated_tokens;
+  report_.generated_tokens = generated_tokens.size();
+  chat_messages_.push_back({"user", user_text});
+  chat_messages_.push_back({"assistant", generated_text});
+  return generated_text;
+#endif  // MOSAICVRAM_ENABLE_TOKENIZER_JSON
 }
 
 std::vector<int64_t> OnnxLlmResidencyAdapter::GenerateContinuationTokens(
