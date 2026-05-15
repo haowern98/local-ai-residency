@@ -450,7 +450,11 @@ void CliRuntime::Load(const std::string& name) {
 void CliRuntime::Save(const std::string& name) {
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
-  EnsureLoaded(name, session);
+  if (session->adapter == nullptr ||
+      session->adapter->residency_state() != ResidencyState::kResident) {
+    throw std::runtime_error("session is not loaded; use /load " + name +
+                             " first");
+  }
   const ResidencyControllerResult result =
       controller_->SaveSession(session->spec.id);
   if (!result.ok) {
