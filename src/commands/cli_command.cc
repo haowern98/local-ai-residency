@@ -467,7 +467,9 @@ void CliRuntime::Evict(const std::string& name) {
   CliSession* session = FindMutable(name);
   EnsureValid(*session);
   if (session->adapter == nullptr) {
-    chat_mode_ = false;
+    if (name == active_session_) {
+      chat_mode_ = false;
+    }
     std::cout << name << " is already unloaded\n";
     return;
   }
@@ -476,7 +478,9 @@ void CliRuntime::Evict(const std::string& name) {
   if (!result.ok) {
     throw std::runtime_error(result.error_message);
   }
-  chat_mode_ = false;
+  if (name == active_session_) {
+    chat_mode_ = false;
+  }
   std::cout << "evicted " << name << "\n";
 }
 
