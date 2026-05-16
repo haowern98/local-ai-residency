@@ -4,6 +4,7 @@
 #ifdef MOSAICVRAM_ENABLE_TOKENIZER_JSON
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,9 @@ std::vector<int64_t> TokenizeWithTokenizerJson(
 
 std::string DecodeWithTokenizerJson(const std::string& tokenizer_path,
                                     const std::vector<int64_t>& token_ids);
+
+std::optional<int64_t> TokenIdForTokenizerString(
+    const std::string& tokenizer_path, const std::string& token);
 
 TokenizerChatPrompt ApplyTokenizerChatTemplate(
     const std::string& tokenizer_path, const std::string& user_text);

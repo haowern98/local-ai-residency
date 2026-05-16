@@ -125,10 +125,26 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
     CudaBuffer cache_buffer;
   };
 
+  struct RecurrentTensor {
+    std::string past_name;
+    std::string present_name;
+    ONNXTensorElementDataType element_type =
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+    std::vector<int64_t> shape;
+    CudaBuffer buffer;
+  };
+
   struct DecodeResult {
     int64_t next_token = -1;
     double logits_checksum = 0.0;
     std::vector<float> logits;
+  };
+
+  struct EmbeddingResult {
+    CudaBuffer buffer;
+    std::vector<int64_t> shape;
+    ONNXTensorElementDataType element_type =
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
   };
 
   struct ChatMessage {
@@ -138,10 +154,13 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
 
   void CreateSession(double* elapsed_ms);
   void DiscoverModelIo();
+  void DiscoverEmbeddingModel();
+  EmbeddingResult RunTokenEmbedding(const std::vector<int64_t>& input_tokens);
   void AllocateInitialCache();
   DecodeResult RunDecodeStep(const std::vector<int64_t>& input_tokens,
                              int64_t past_length, bool read_logits);
   void ReplaceCache(std::vector<KvTensor>* output_tensors,
+                    std::vector<RecurrentTensor>* output_recurrent_tensors,
                     int64_t cache_length);
   void FreeCache();
   void ValidateReadyForDecode() const;
@@ -151,16 +170,33 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   std::unique_ptr<Ort::Env> env_;
   std::unique_ptr<Ort::SessionOptions> session_options_;
   std::unique_ptr<Ort::Session> session_;
+  std::unique_ptr<Ort::Session> embedding_session_;
   std::string input_ids_name_;
+  std::string inputs_embeds_name_;
   std::string attention_mask_name_;
   std::string position_ids_name_;
+  std::string num_logits_to_keep_name_;
   std::string logits_name_;
+  std::vector<int64_t> position_ids_shape_;
+  std::string embedding_input_ids_name_;
+  std::string embedding_output_name_;
+  ONNXTensorElementDataType inputs_embeds_element_type_ =
+      ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  ONNXTensorElementDataType embedding_input_element_type_ =
+      ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  ONNXTensorElementDataType embedding_element_type_ =
+      ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  ONNXTensorElementDataType num_logits_to_keep_element_type_ =
+      ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  int64_t embedding_hidden_size_ = 0;
+  std::vector<int64_t> num_logits_to_keep_shape_;
   ONNXTensorElementDataType logits_element_type_ =
       ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
   int64_t vocab_size_ = 0;
   int64_t cache_length_ = 0;
   int64_t snapshot_cache_length_ = 0;
   std::vector<KvTensor> kv_tensors_;
+  std::vector<RecurrentTensor> recurrent_tensors_;
   BackendStateSnapshot snapshot_;
   OnnxLlmResidencyReport report_;
   std::vector<ChatMessage> chat_messages_;

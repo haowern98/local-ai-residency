@@ -4,6 +4,7 @@
 
 #include <tokenizers_cpp.h>
 
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -207,6 +208,134 @@ std::optional<std::string> ExtractJsonStringField(std::string_view json,
   return std::nullopt;
 }
 
+std::size_t SkipJsonString(std::string_view text, std::size_t quote_pos) {
+  if (quote_pos >= text.size() || text[quote_pos] != '"') {
+    throw std::runtime_error("expected JSON string");
+  }
+  bool escaped = false;
+  for (std::size_t i = quote_pos + 1; i < text.size(); ++i) {
+    const char current = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (current == '\\') {
+      escaped = true;
+      continue;
+    }
+    if (current == '"') {
+      return i + 1;
+    }
+  }
+  throw std::runtime_error("unterminated JSON string");
+}
+
+bool IsDecimalInteger(std::string_view text) {
+  if (text.empty()) {
+    return false;
+  }
+  for (const char c : text) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::size_t FirstNonSpace(std::string_view text, std::size_t offset) {
+  while (offset < text.size() &&
+         std::isspace(static_cast<unsigned char>(text[offset]))) {
+    ++offset;
+  }
+  return offset;
+}
+
+std::optional<int64_t> AddedTokenIdFromConfig(std::string_view config,
+                                              std::string_view token) {
+  std::size_t search_pos = 0;
+  while (search_pos < config.size()) {
+    const std::size_t quote_pos = config.find('"', search_pos);
+    if (quote_pos == std::string_view::npos) {
+      return std::nullopt;
+    }
+    const std::string key = ParseJsonStringAt(config, quote_pos);
+    const std::size_t after_key = SkipJsonString(config, quote_pos);
+    search_pos = after_key;
+    if (!IsDecimalInteger(key)) {
+      continue;
+    }
+
+    const std::size_t colon = config.find(':', after_key);
+    if (colon == std::string_view::npos) {
+      return std::nullopt;
+    }
+    const std::size_t object_open = FirstNonSpace(config, colon + 1);
+    if (object_open >= config.size() || config[object_open] != '{') {
+      continue;
+    }
+
+    const std::size_t next_key = config.find("\n    \"", object_open + 1);
+    const std::size_t object_end =
+        next_key == std::string_view::npos ? config.size() : next_key;
+    const std::size_t content_key = config.find("\"content\"", object_open + 1);
+    if (content_key == std::string_view::npos || content_key >= object_end) {
+      continue;
+    }
+    const std::size_t content_colon = config.find(':', content_key);
+    if (content_colon == std::string_view::npos ||
+        content_colon >= object_end) {
+      continue;
+    }
+    const std::size_t value_quote = config.find('"', content_colon + 1);
+    if (value_quote == std::string_view::npos || value_quote >= object_end) {
+      continue;
+    }
+    if (ParseJsonStringAt(config, value_quote) == token) {
+      return std::stoll(key);
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string_view> AddedTokenObjectFromConfig(
+    std::string_view config, int64_t token_id) {
+  const std::string key = "\"" + std::to_string(token_id) + "\"";
+  const std::size_t key_pos = config.find(key);
+  if (key_pos == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const std::size_t colon = config.find(':', key_pos + key.size());
+  if (colon == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const std::size_t object_open = FirstNonSpace(config, colon + 1);
+  if (object_open >= config.size() || config[object_open] != '{') {
+    return std::nullopt;
+  }
+  const std::size_t next_key = config.find("\n    \"", object_open + 1);
+  const std::size_t object_end =
+      next_key == std::string_view::npos ? config.size() : next_key;
+  return config.substr(object_open, object_end - object_open);
+}
+
+bool AddedTokenIsSpecial(std::string_view config, int64_t token_id) {
+  const std::optional<std::string_view> object =
+      AddedTokenObjectFromConfig(config, token_id);
+  if (!object.has_value()) {
+    return false;
+  }
+  const std::size_t special_key = object->find("\"special\"");
+  if (special_key == std::string_view::npos) {
+    return false;
+  }
+  const std::size_t colon = object->find(':', special_key);
+  if (colon == std::string_view::npos) {
+    return false;
+  }
+  const std::size_t value = FirstNonSpace(*object, colon + 1);
+  return object->substr(value, 4) == "true";
+}
+
 std::unique_ptr<tokenizers::Tokenizer> LoadTokenizerJson(
     const std::string& tokenizer_path) {
   const std::filesystem::path json_path =
@@ -347,12 +476,24 @@ std::vector<int64_t> TokenizeWithTokenizerJson(
 
 std::string DecodeWithTokenizerJson(const std::string& tokenizer_path,
                                     const std::vector<int64_t>& token_ids) {
+  const std::string config = ReadTokenizerConfig(tokenizer_path);
+  std::vector<int64_t> display_token_ids;
+  display_token_ids.reserve(token_ids.size());
+  for (const int64_t token_id : token_ids) {
+    if (!AddedTokenIsSpecial(config, token_id)) {
+      display_token_ids.push_back(token_id);
+    }
+  }
+  if (display_token_ids.empty()) {
+    return "";
+  }
+
   std::unique_ptr<tokenizers::Tokenizer> tokenizer =
       LoadTokenizerJson(tokenizer_path);
 
   std::vector<int32_t> ids;
-  ids.reserve(token_ids.size());
-  for (const int64_t token_id : token_ids) {
+  ids.reserve(display_token_ids.size());
+  for (const int64_t token_id : display_token_ids) {
     if (token_id < 0 || token_id > std::numeric_limits<int32_t>::max()) {
       throw std::runtime_error(
           "cannot decode token id outside int32 tokenizer range");
@@ -360,6 +501,27 @@ std::string DecodeWithTokenizerJson(const std::string& tokenizer_path,
     ids.push_back(static_cast<int32_t>(token_id));
   }
   return tokenizer->Decode(ids);
+}
+
+std::optional<int64_t> TokenIdForTokenizerString(
+    const std::string& tokenizer_path, const std::string& token) {
+  const std::optional<int64_t> config_id =
+      AddedTokenIdFromConfig(ReadTokenizerConfig(tokenizer_path), token);
+  if (config_id.has_value()) {
+    return config_id;
+  }
+  if (token.starts_with("<")) {
+    return std::nullopt;
+  }
+
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer =
+      LoadTokenizerJson(tokenizer_path);
+
+  const int32_t id = tokenizer->TokenToId(token);
+  if (id < 0) {
+    return std::nullopt;
+  }
+  return static_cast<int64_t>(id);
 }
 
 TokenizerChatPrompt ApplyTokenizerChatTemplate(
@@ -541,6 +703,41 @@ TokenizerChatPrompt ApplyTokenizerChatTurnTemplate(
   const std::string bos_token =
       TokenizerConfigString(tokenizer_path, "bos_token", "");
 
+  if (Contains(chat_template, "<|start_header_id|>") &&
+      Contains(chat_template, "<|end_header_id|>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? bos_token : "<|eot_id|>") +
+            std::string("<|start_header_id|>user<|end_header_id|>\n\n") +
+            user_text +
+            "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+        {"<|eot_id|>", "<|start_header_id|>"}};
+  }
+
+  if (Contains(chat_template, "<start_of_turn>") &&
+      Contains(chat_template, "<end_of_turn>")) {
+    return TokenizerChatPrompt{(first_turn ? bos_token : "<end_of_turn>\n") +
+                                   std::string("<start_of_turn>user\n") +
+                                   user_text +
+                                   "<end_of_turn>\n<start_of_turn>model\n",
+                               {"<end_of_turn>", "<start_of_turn>"}};
+  }
+
+  if (Contains(chat_template, "<|im_start|>") &&
+      Contains(chat_template, "<|im_end|>")) {
+    return TokenizerChatPrompt{
+        (first_turn ? "" : "<|im_end|>\n") + std::string("<|im_start|>user\n") +
+            user_text + "<|im_end|>\n<|im_start|>assistant\n",
+        {"<|im_end|>", "<|im_start|>"}};
+  }
+
+  if (Contains(chat_template, "<|user|>") &&
+      Contains(chat_template, "<|assistant|>")) {
+    return TokenizerChatPrompt{(first_turn ? "" : "<|end|>\n") +
+                                   std::string("<|user|>\n") + user_text +
+                                   "<|end|>\n<|assistant|>\n",
+                               {"<|end|>", "<|user|>", "<|assistant|>"}};
+  }
+
   const std::optional<std::string> literal_user_token =
       ExtractSingleQuotedLiteralContaining(chat_template, "User");
   const std::optional<std::string> literal_assistant_token =
@@ -555,10 +752,10 @@ TokenizerChatPrompt ApplyTokenizerChatTurnTemplate(
     }
     stop_strings.push_back(*literal_user_token);
     stop_strings.push_back(*literal_assistant_token);
-    return TokenizerChatPrompt{
-        (first_turn ? bos_token : eos_token) + *literal_user_token + user_text +
-            *literal_assistant_token,
-        std::move(stop_strings)};
+    return TokenizerChatPrompt{(first_turn ? bos_token : eos_token) +
+                                   *literal_user_token + user_text +
+                                   *literal_assistant_token,
+                               std::move(stop_strings)};
   }
 
   if (Contains(chat_template, "<ï½œUserï½œ>") &&
@@ -566,43 +763,8 @@ TokenizerChatPrompt ApplyTokenizerChatTurnTemplate(
     return TokenizerChatPrompt{
         (first_turn ? bos_token : "<ï½œendâ–ofâ–sentenceï½œ>") +
             std::string("<ï½œUserï½œ>") + user_text + "<ï½œAssistantï½œ>",
-        {"<ï½œendâ–ofâ–sentenceï½œ>", "<ï½œUserï½œ>", "<ï½œAssistantï½œ>"}};
-  }
-
-  if (Contains(chat_template, "<start_of_turn>") &&
-      Contains(chat_template, "<end_of_turn>")) {
-    return TokenizerChatPrompt{
-        (first_turn ? bos_token : "<end_of_turn>\n") +
-            std::string("<start_of_turn>user\n") + user_text +
-            "<end_of_turn>\n<start_of_turn>model\n",
-        {"<end_of_turn>", "<start_of_turn>"}};
-  }
-
-  if (Contains(chat_template, "<|im_start|>") &&
-      Contains(chat_template, "<|im_end|>")) {
-    return TokenizerChatPrompt{
-        (first_turn ? "" : "<|im_end|>\n") +
-            std::string("<|im_start|>user\n") + user_text +
-            "<|im_end|>\n<|im_start|>assistant\n",
-        {"<|im_end|>", "<|im_start|>"}};
-  }
-
-  if (Contains(chat_template, "<|start_header_id|>") &&
-      Contains(chat_template, "<|end_header_id|>")) {
-    return TokenizerChatPrompt{
-        (first_turn ? bos_token : "<|eot_id|>") +
-            std::string("<|start_header_id|>user<|end_header_id|>\n\n") +
-            user_text +
-            "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-        {"<|eot_id|>", "<|start_header_id|>"}};
-  }
-
-  if (Contains(chat_template, "<|user|>") &&
-      Contains(chat_template, "<|assistant|>")) {
-    return TokenizerChatPrompt{
-        (first_turn ? "" : "<|end|>\n") + std::string("<|user|>\n") +
-            user_text + "<|end|>\n<|assistant|>\n",
-        {"<|end|>", "<|user|>", "<|assistant|>"}};
+        {"<ï½œendâ–ofâ–sentenceï½œ>", "<ï½œUserï½œ>",
+         "<ï½œAssistantï½œ>"}};
   }
 
   throw std::runtime_error(
