@@ -75,15 +75,7 @@ VRAM, but often loses active session state or requires replaying the prompt.
 
 MosaicVRAM targets a lower-level lifecycle:
 
-```mermaid
-flowchart LR
-    A[Active LLM backend] --> B[Save session state]
-    B --> C[Evict GPU residency]
-    C --> D[Run another backend]
-    D --> E[Reload original backend]
-    E --> F[Restore saved state]
-    F --> G[Resume generation]
-```
+![MosaicVRAM residency lifecycle](docs/assets/readme_lifecycle.svg)
 
 Each backend adapter owns its native state format, while the residency
 controller drives the same lifecycle across backends.
