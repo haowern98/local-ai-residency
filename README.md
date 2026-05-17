@@ -56,8 +56,10 @@ mosaicvram.exe residency-run --plan path\to\plan.txt
 
 The older focused notes are still available for narrow workflows:
 
-- [Gemma CUDA Export Note](docs/GEMMA_CUDA_EXPORT.md)
-- [GPU Smoke Tests](docs/GPU_SMOKE_TESTS.md)
+- [Gemma CUDA Export Note](docs/GEMMA_CUDA_EXPORT.md): notes for producing a
+  Gemma ONNX export shape that ONNX Runtime CUDA can execute.
+- [GPU Smoke Tests](docs/GPU_SMOKE_TESTS.md): commands and generated plans for
+  llama.cpp-only, ONNX-only, and mixed-backend GPU residency checks.
 
 ## Core Idea
 
