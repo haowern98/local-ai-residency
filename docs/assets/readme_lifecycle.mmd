@@ -1,0 +1,22 @@
+%%{
+  init: {
+    "theme": "default",
+    "flowchart": {
+      "htmlLabels": true,
+      "nodeSpacing": 100,
+      "rankSpacing": 120,
+      "padding": 24
+    },
+    "themeVariables": {
+      "fontFamily": "trebuchet ms, verdana, arial, sans-serif",
+      "fontSize": "32px"
+    }
+  }
+}%%
+flowchart LR
+    A["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Active LLM<br/>backend</div>"] --> B["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Save session<br/>state</div>"]
+    B --> C["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Evict GPU<br/>residency</div>"]
+    C --> D["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Run another<br/>backend</div>"]
+    D --> E["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Reload original<br/>backend</div>"]
+    E --> F["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Restore saved<br/>state</div>"]
+    F --> G["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Resume<br/>generation</div>"]

@@ -1,3 +1,17 @@
+%%{
+  init: {
+    "theme": "default",
+    "flowchart": {
+      "nodeSpacing": 100,
+      "rankSpacing": 120,
+      "padding": 24
+    },
+    "themeVariables": {
+      "fontFamily": "trebuchet ms, verdana, arial, sans-serif",
+      "fontSize": "32px"
+    }
+  }
+}%%
 flowchart LR
     A[Prefill prompt] --> B[Save state]
     B --> C[Decode baseline next token]

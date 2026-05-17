@@ -1,3 +1,17 @@
+%%{
+  init: {
+    "theme": "default",
+    "flowchart": {
+      "nodeSpacing": 100,
+      "rankSpacing": 120,
+      "padding": 24
+    },
+    "themeVariables": {
+      "fontFamily": "trebuchet ms, verdana, arial, sans-serif",
+      "fontSize": "32px"
+    }
+  }
+}%%
 flowchart TD
     CLI[Interactive CLI] --> Runtime[CliRuntime]
     Runner[residency-run plans] --> Controller[ResidencyController]
