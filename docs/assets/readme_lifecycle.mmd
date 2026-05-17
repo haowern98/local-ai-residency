@@ -9,14 +9,14 @@
     },
     "themeVariables": {
       "fontFamily": "trebuchet ms, verdana, arial, sans-serif",
-      "fontSize": "32px"
+      "fontSize": "64px"
     }
   }
 }%%
-flowchart LR
-    A["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Active LLM<br/>backend</div>"] --> B["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Save session<br/>state</div>"]
-    B --> C["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Evict GPU<br/>residency</div>"]
-    C --> D["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Run another<br/>backend</div>"]
-    D --> E["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Reload original<br/>backend</div>"]
-    E --> F["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Restore saved<br/>state</div>"]
-    F --> G["<div style='min-width: 320px; padding: 24px 34px; line-height: 1.35;'>Resume<br/>generation</div>"]
+flowchart TD
+    A["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Active LLM<br/>backend</div>"] --> B["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Save session<br/>state</div>"]
+    B --> C["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Evict GPU<br/>residency</div>"]
+    C --> D["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Run another<br/>backend</div>"]
+    D --> E["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Reload original<br/>backend</div>"]
+    E --> F["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Restore saved<br/>state</div>"]
+    F --> G["<div style='width: 430px; height: 130px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>Resume<br/>generation</div>"]

@@ -2,23 +2,28 @@
   init: {
     "theme": "default",
     "flowchart": {
+      "htmlLabels": true,
       "nodeSpacing": 100,
       "rankSpacing": 120,
       "padding": 24
     },
     "themeVariables": {
       "fontFamily": "trebuchet ms, verdana, arial, sans-serif",
-      "fontSize": "32px"
+      "fontSize": "64px"
     }
   }
 }%%
-flowchart LR
-    A[Prefill prompt] --> B[Save state]
-    B --> C[Decode baseline next token]
-    C --> D[Evict context/model residency]
-    D --> E[Reload residency]
-    E --> F[Restore saved state]
-    F --> G[Decode restored next token]
-    G --> H{Token IDs match?}
-    H -->|Yes| I[resume_match=yes]
-    H -->|No| J[resume_match=no]
+flowchart TD
+    A["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Prefill prompt</div>"] --> B["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Save state</div>"]
+    B --> C["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Decode baseline<br/>next token</div>"]
+    C --> D["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Evict context/model<br/>residency</div>"]
+    D --> E["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Reload residency</div>"]
+    E --> F["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Restore saved<br/>state</div>"]
+    F --> G["<div style='min-width: 520px; padding: 28px 38px; line-height: 1.25; font-size: 64px;'>Decode restored<br/>next token</div>"]
+    G --> H
+    subgraph Branch[" "]
+      direction LR
+      H{"<div style='width: 420px; height: 180px; display: flex; align-items: center; justify-content: center; line-height: 1.25; font-size: 64px;'>Token IDs<br/>match?</div>"} -->|Yes| I["<div style='width: 520px; height: 110px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>resume_match=yes</div>"]
+    end
+    H -->|No| J["<div style='width: 520px; height: 110px; display: flex; align-items: center; justify-content: center; line-height: 1.2; font-size: 64px;'>resume_match=no</div>"]
+    style Branch fill:transparent,stroke:transparent,color:transparent
