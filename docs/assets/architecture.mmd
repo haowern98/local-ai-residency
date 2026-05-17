@@ -1,0 +1,23 @@
+flowchart TD
+    CLI[Interactive CLI] --> Runtime[CliRuntime]
+    Runner[residency-run plans] --> Controller[ResidencyController]
+    Runtime --> Controller
+
+    Controller --> AdapterAPI[BackendStateAdapter interface]
+
+    AdapterAPI --> Llama[LlamaResidencyAdapter]
+    AdapterAPI --> OnnxLLM[OnnxLlmResidencyAdapter]
+    AdapterAPI --> OnnxTensor[ONNX tensor backend]
+
+    Llama --> LlamaCpp[llama.cpp model/context]
+    OnnxLLM --> ORT[ONNX Runtime Session + IoBinding]
+    OnnxLLM --> Tokenizer[tokenizers-cpp tokenizer.json]
+    OnnxLLM --> Embed[Optional sibling embedding ONNX]
+    OnnxTensor --> ORTTensor[ONNX Runtime tensor workload]
+
+    Llama --> HostState[Pinned host state buffer]
+    OnnxLLM --> HostState
+    OnnxTensor --> Boundary[CUDA boundary tensors]
+
+    HostState --> Restore[Restore saved backend state]
+    Boundary --> Lifecycle[Lifecycle / boundary ownership only]

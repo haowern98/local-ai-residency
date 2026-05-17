@@ -58,6 +58,11 @@ requirement. ONNX Runtime GPU requires ONNX Runtime, CUDA, and cuDNN DLLs on
 
 ## Architecture
 
+At a high level, MosaicVRAM separates lifecycle orchestration from each
+backend's native state format:
+
+![MosaicVRAM architecture](assets/architecture.svg)
+
 The residency controller drives one lifecycle across backend adapters:
 
 ```text
@@ -126,6 +131,8 @@ model-name hardcoding.
 
 A deterministic resume test proves that a restored session continues from the
 same state as the saved session. The test is token-based, not text-based.
+
+![Deterministic resume validation flow](assets/deterministic_resume.svg)
 
 The controlled flow is:
 

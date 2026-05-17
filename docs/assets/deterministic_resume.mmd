@@ -1,0 +1,10 @@
+flowchart LR
+    A[Prefill prompt] --> B[Save state]
+    B --> C[Decode baseline next token]
+    C --> D[Evict context/model residency]
+    D --> E[Reload residency]
+    E --> F[Restore saved state]
+    F --> G[Decode restored next token]
+    G --> H{Token IDs match?}
+    H -->|Yes| I[resume_match=yes]
+    H -->|No| J[resume_match=no]
