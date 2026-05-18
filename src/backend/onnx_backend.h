@@ -15,16 +15,25 @@
 
 namespace mosaicvram {
 
+/**
+ * Selects whether ONNX inputs and outputs are staged on CPU or CUDA memory.
+ */
 enum class OnnxIoMode {
   kCpu,
   kCuda,
 };
 
+/**
+ * Selects the ONNX Runtime execution provider.
+ */
 enum class OnnxProvider {
   kCpu,
   kCuda,
 };
 
+/**
+ * Selects how synthetic tensor inputs are initialized for smoke runs.
+ */
 enum class OnnxInputMode {
   kZero,
   kOne,
@@ -32,11 +41,17 @@ enum class OnnxInputMode {
   kRandom,
 };
 
+/**
+ * Explicit shape override for dynamic ONNX model inputs.
+ */
 struct OnnxShapeOverride {
   std::string name;
   std::vector<int64_t> shape;
 };
 
+/**
+ * Configuration for the lower-level ONNX tensor backend.
+ */
 struct OnnxBackendOptions {
   std::string model_path;
   OnnxIoMode io_mode = OnnxIoMode::kCpu;
@@ -47,6 +62,12 @@ struct OnnxBackendOptions {
   std::vector<OnnxShapeOverride> shape_overrides;
 };
 
+/**
+ * ONNX Runtime tensor backend used to validate lifecycle and boundary tensors.
+ *
+ * This backend is not a chat adapter. It exercises ONNX Runtime loading,
+ * execution, and explicit CPU/CUDA input-output buffer ownership.
+ */
 class OnnxBackend : public Backend {
  public:
   explicit OnnxBackend(OnnxBackendOptions options);

@@ -16,6 +16,9 @@
 
 namespace mosaicvram {
 
+/**
+ * Configuration for an ONNX Runtime LLM residency session.
+ */
 struct OnnxLlmResidencyOptions {
   MosaicSessionId session_id = 2;
   std::string model_path;
@@ -25,6 +28,9 @@ struct OnnxLlmResidencyOptions {
   SamplingOptions sampling;
 };
 
+/**
+ * Metrics and validation outputs for an ONNX LLM residency run.
+ */
 struct OnnxLlmResidencyReport {
   int past_input_count = 0;
   int present_output_count = 0;
@@ -63,6 +69,15 @@ struct OnnxLlmResidencyReport {
   std::vector<int64_t> generated_token_ids;
 };
 
+/**
+ * BackendStateAdapter implementation for decoder-style ONNX language
+ * models.
+ *
+ * The adapter uses low-level ONNX Runtime sessions and IoBinding
+ * so KV-cache
+ * tensors remain visible for save, restore, and deterministic
+ * resume checks.
+ */
 class OnnxLlmResidencyAdapter : public BackendStateAdapter {
  public:
   explicit OnnxLlmResidencyAdapter(OnnxLlmResidencyOptions options);
@@ -71,18 +86,43 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
   OnnxLlmResidencyAdapter(const OnnxLlmResidencyAdapter&) = delete;
   OnnxLlmResidencyAdapter& operator=(const OnnxLlmResidencyAdapter&) = delete;
 
+  /**
+   * Creates the ONNX Runtime session and discovers model I/O surfaces.
+
+   */
   void Load();
+  /**
+   * Clears chat state without unloading ONNX Runtime residency.
+   */
   void ResetConversation();
+  /**
+   * Runs prompt tokens through the decoder and fills the KV cache.
+   */
   void PrefillPrompt();
+  /**
+   * Captures the baseline next token used by deterministic resume
+   * checks.
+   */
   void CaptureBaselineNextToken();
+  /**
+   * Generates a chat reply using tokenizer.json and configured stop
+   * strings.
+   */
   std::string GenerateChatReply(const std::string& tokenizer_path,
                                 const std::string& user_text, int max_tokens,
                                 const std::vector<std::string>& stop_strings);
+  /**
+   * Generates token IDs from the current restored or resident state.
+ */
   std::vector<int64_t> GenerateContinuationTokens(
       const std::vector<int64_t>& tokens, int max_tokens);
   std::vector<int64_t> GenerateContinuationTokens(
       const std::vector<int64_t>& tokens, int max_tokens,
       const std::vector<std::vector<int64_t>>& stop_token_sequences);
+  /**
+   * Restores saved state, generates a continuation, and records
+   * validation data.
+   */
   void RestoreAndGenerateContinuation(
       const std::vector<int64_t>& tokens, int max_tokens,
       const std::vector<int64_t>& expected_tokens);
