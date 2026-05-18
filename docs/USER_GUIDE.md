@@ -24,6 +24,39 @@ The CLI loads the config at startup and can reload it while running:
 /reload-config
 ```
 
+## Running From A Release Zip
+
+Extract the release zip to a folder, then run:
+
+```powershell
+.\mosaicvram.exe cli --config .\sessions.txt
+```
+
+The executable and `sessions.txt` should live beside each other:
+
+```text
+mosaicvram-release\
+  mosaicvram.exe
+  sessions.txt
+  README.md
+  docs\
+    USER_GUIDE.md
+    COMPATIBILITY.md
+  runtime\
+    onnxruntime.dll
+    onnxruntime_providers_shared.dll
+    onnxruntime_providers_cuda.dll
+```
+
+Edit `sessions.txt` before launching. The `model=` and `tokenizer=` values must
+point to files or directories on your machine. If the ONNX Runtime DLLs are kept
+in `runtime\`, add that folder to `PATH` before running the executable, or copy
+the required DLLs beside `mosaicvram.exe`.
+
+ONNX Runtime CUDA also requires compatible NVIDIA CUDA and cuDNN runtime DLLs
+available on `PATH`. TensorRT DLLs are not required unless you build and run a
+TensorRT-specific configuration.
+
 ## sessions.txt
 
 Edit `sessions.txt` manually. It contains one session per line.
