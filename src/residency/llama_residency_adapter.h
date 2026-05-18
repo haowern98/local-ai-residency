@@ -134,8 +134,8 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckModelReloadedFullRestore();
   void CheckModelReloadedSequenceRestore();
   /**
-   * Restores any saved state and generates a plain-text continuation.
- */
+   * Restores saved state and generates a plain-text continuation.
+   */
   std::string GenerateContinuation(const std::string& text, int max_tokens);
   /**
    * Generates a chat-formatted reply using the adapter's conversation

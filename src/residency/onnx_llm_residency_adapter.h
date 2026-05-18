@@ -112,8 +112,8 @@ class OnnxLlmResidencyAdapter : public BackendStateAdapter {
                                 const std::string& user_text, int max_tokens,
                                 const std::vector<std::string>& stop_strings);
   /**
-   * Generates token IDs from the current restored or resident state.
- */
+   * Generates token IDs from restored or resident state.
+   */
   std::vector<int64_t> GenerateContinuationTokens(
       const std::vector<int64_t>& tokens, int max_tokens);
   std::vector<int64_t> GenerateContinuationTokens(
