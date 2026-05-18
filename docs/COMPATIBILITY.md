@@ -122,6 +122,19 @@ chat generation after restore
 | DeepSeek R1 Distill Llama 8B ONNX | GPU INT4 RTN block-32 | Compatible | Emits visible `<think>` blocks by model design. |
 | Keisuke Gemma 3 4B IT ONNX INT4 | GenAI-style INT4 | Compatible | Use the complete Gemma tokenizer folder for CLI chat. |
 
+## Tested Model Sources
+
+The CLI compatibility checks were run against local model copies from these
+sources:
+
+| Test Role | Source |
+| --- | --- |
+| Phi-3 Mini 128K ONNX | [`microsoft/Phi-3-mini-128k-instruct-onnx`](https://huggingface.co/microsoft/Phi-3-mini-128k-instruct-onnx) |
+| Llama 3.2 3B ONNX | [`onnx-community/Llama-3.2-3B-Instruct-GENAI-ONNX`](https://huggingface.co/onnx-community/Llama-3.2-3B-Instruct-GENAI-ONNX) |
+| DeepSeek R1 Distill Llama 8B ONNX | [`onnxruntime/DeepSeek-R1-Distill-ONNX`](https://huggingface.co/onnxruntime/DeepSeek-R1-Distill-ONNX/tree/main/deepseek-r1-distill-llama-8B/gpu/gpu-int4-rtn-block-32), folder `deepseek-r1-distill-llama-8B/gpu/gpu-int4-rtn-block-32` |
+| Keisuke Gemma 3 4B IT ONNX INT4 | [`keisuke-miyako/gemma-3-4b-it-onnx-int4`](https://huggingface.co/keisuke-miyako/gemma-3-4b-it-onnx-int4) |
+| Paired llama.cpp GGUF session | [Qwen3-VL-8B in LM Studio](https://lmstudio.ai/models/qwen/qwen3-vl-8b), using [`lmstudio-community/Qwen3-VL-8B-Instruct-GGUF`](https://huggingface.co/lmstudio-community/Qwen3-VL-8B-Instruct-GGUF) and `Qwen3-VL-8B-Instruct-Q4_K_M.gguf` |
+
 ## Partial Or Not Recommended
 
 | Model | Export | Result | Reason |
