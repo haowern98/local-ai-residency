@@ -75,7 +75,7 @@ VRAM, but often loses active session state or requires replaying the prompt.
 
 MosaicVRAM targets a lower-level lifecycle:
 
-![MosaicVRAM residency lifecycle](docs/assets/readme_lifecycle.svg)
+![MosaicVRAM residency lifecycle](docs/assets/readme_lifecycle.drawio.png)
 
 Each backend adapter owns its native state format, while the residency
 controller drives the same lifecycle across backends.

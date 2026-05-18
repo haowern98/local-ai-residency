@@ -61,7 +61,17 @@ requirement. ONNX Runtime GPU requires ONNX Runtime, CUDA, and cuDNN DLLs on
 At a high level, MosaicVRAM separates lifecycle orchestration from each
 backend's native state format:
 
-![MosaicVRAM architecture](assets/architecture.svg)
+![MosaicVRAM layered architecture](assets/layered_architecture_diagram.png)
+
+Solid arrows show normal control or runtime dependency paths. The frontends call
+into `ResidencyController`, which drives backend implementations through the
+shared `BackendStateAdapter` interface. Backend adapters then call their native
+runtime dependencies, such as llama.cpp, ONNX Runtime, tokenizers-cpp, and CUDA.
+
+Dashed arrows show save/restore state-boundary paths. They are separate from the
+normal inference call path: llama.cpp and ONNX LLM sessions save backend state
+into pinned host memory, while the tensor backend tracks CUDA-side boundary
+tensors.
 
 The residency controller drives one lifecycle across backend adapters:
 
@@ -132,7 +142,7 @@ model-name hardcoding.
 A deterministic resume test proves that a restored session continues from the
 same state as the saved session. The test is token-based, not text-based.
 
-![Deterministic resume validation flow](assets/deterministic_resume.svg)
+![Deterministic resume validation flow](assets/deterministic_resume.drawio.png)
 
 The controlled flow is:
 
