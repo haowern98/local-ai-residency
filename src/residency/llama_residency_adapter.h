@@ -16,6 +16,9 @@
 
 namespace mosaicvram {
 
+/**
+ * Configuration for a llama.cpp-backed residency session.
+ */
 struct LlamaResidencyOptions {
   MosaicSessionId session_id = 1;
   std::string model_path;
@@ -34,6 +37,9 @@ struct LlamaResidencyOptions {
   llama_seq_id sequence_id = 0;
 };
 
+/**
+ * Metrics and validation outputs for a llama.cpp residency run.
+ */
 struct LlamaResidencyReport {
   std::size_t prompt_tokens = 0;
   std::size_t full_state_bytes = 0;
@@ -77,11 +83,23 @@ struct LlamaResidencyReport {
   std::string generated_text;
 };
 
+/**
+ * Chat message retained by the llama.cpp adapter conversation state.
+ */
 struct LlamaChatMessage {
   std::string role;
   std::string content;
 };
 
+/**
+ * BackendStateAdapter implementation for llama.cpp GGUF models.
+ *
+ * The
+ * adapter owns llama.cpp model/context residency and translates the shared
+ *
+ * save, evict, reload, restore, and resume lifecycle into llama.cpp state
+ * APIs.
+ */
 class LlamaResidencyAdapter : public BackendStateAdapter {
  public:
   explicit LlamaResidencyAdapter(LlamaResidencyOptions options);
@@ -90,9 +108,22 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   LlamaResidencyAdapter(const LlamaResidencyAdapter&) = delete;
   LlamaResidencyAdapter& operator=(const LlamaResidencyAdapter&) = delete;
 
+  /**
+   * Loads the llama.cpp model according to the configured options.
+   */
   void Load();
+  /**
+   * Creates a llama.cpp context for the loaded model.
+   */
   void CreateContext();
+  /**
+   * Decodes the configured prompt into the current context.
+   */
   void PrefillPrompt();
+  /**
+   * Captures the baseline next token used by deterministic resume
+   * checks.
+   */
   void CaptureBaselineNextToken();
   void CheckFullRestore();
   void CheckSequenceRestore();
@@ -102,9 +133,23 @@ class LlamaResidencyAdapter : public BackendStateAdapter {
   void CheckRecreatedSequenceRestore();
   void CheckModelReloadedFullRestore();
   void CheckModelReloadedSequenceRestore();
+  /**
+   * Restores saved state and generates a plain-text continuation.
+   */
   std::string GenerateContinuation(const std::string& text, int max_tokens);
+  /**
+   * Generates a chat-formatted reply using the adapter's conversation
+   * state.
+   */
   std::string GenerateChatReply(const std::string& user_text, int max_tokens);
+  /**
+   * Clears chat state without unloading model residency.
+   */
   void ResetConversation();
+  /**
+   * Restores saved state, generates a continuation, and records
+   * validation data.
+   */
   void RestoreAndGenerateContinuation(const std::string& text, int max_tokens,
                                       const std::string& expected_text);
 

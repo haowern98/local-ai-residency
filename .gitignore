@@ -2,6 +2,9 @@ build*/
 third_party/
 models/
 deps/
+sessions.txt
+release/
+mosaicvram-release/
 PROJECT_NOTES.md
 /results/
 *.plan
@@ -12,6 +15,7 @@ tests/generated/
 *.ggml
 *.bin
 *.engine
+*.zip
 *.wav
 *.exe
 *.dll
