@@ -4,6 +4,21 @@ This guide covers running MosaicVRAM as a user: configuring sessions, chatting
 with local models, saving residency state, evicting GPU residency, and restoring
 later in the same process.
 
+## Table of Contents
+
+- [Interactive CLI](#interactive-cli)
+- [Running From A Release Zip](#running-from-a-release-zip)
+- [sessions.txt](#sessionstxt)
+  - [llama.cpp GGUF Example](#llamacpp-gguf-example)
+  - [ONNX LLM Example](#onnx-llm-example)
+- [Commands](#commands)
+- [Chat Options](#chat-options)
+  - [llama.cpp Options](#llamacpp-options)
+  - [ONNX LLM Options](#onnx-llm-options)
+  - [Stop Strings And Chat Templates](#stop-strings-and-chat-templates)
+- [Common Errors](#common-errors)
+- [Model Compatibility](#model-compatibility)
+
 ## Interactive CLI
 
 Start the CLI from the directory containing `sessions.txt`:
@@ -61,13 +76,13 @@ TensorRT-specific configuration.
 
 Edit `sessions.txt` manually. It contains one session per line.
 
-llama.cpp GGUF example:
+### llama.cpp GGUF Example
 
 ```text
 session llama backend=llama model="C:\models\qwen.gguf" ctx=16384 batch=512 gpu_layers=-1 device=0 max_tokens=512 temp=0.8 min_p=0.05 seed=1234
 ```
 
-ONNX LLM example:
+### ONNX LLM Example
 
 ```text
 session onnx backend=onnx-llm model="C:\models\gemma\model.onnx" tokenizer="C:\models\gemma-tokenizer" prefill_chunk=512 device=0 max_tokens=512 temp=0.4 top_k=20 top_p=0.9 min_p=0.0 repeat_penalty=1.05 seed=1234 stop_strings="<end_of_turn>,<start_of_turn>"
@@ -126,17 +141,19 @@ checkpoint format.
 
 Chat generation options are read from `sessions.txt`.
 
-Common llama.cpp options:
+### llama.cpp Options
 
 ```text
 max_tokens=512 temp=0.8 min_p=0.05 seed=1234
 ```
 
-Common ONNX options:
+### ONNX LLM Options
 
 ```text
 max_tokens=512 temp=0.4 top_k=20 top_p=0.9 min_p=0.0 repeat_penalty=1.05 seed=1234
 ```
+
+### Stop Strings And Chat Templates
 
 If a model emits visible turn markers, set `stop_strings` to a comma-separated
 list:
