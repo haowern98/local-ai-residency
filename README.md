@@ -1,5 +1,11 @@
 # MosaicVRAM
 
+![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
+![CUDA](https://img.shields.io/badge/CUDA-enabled-76B900)
+![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-CUDA-orange)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![Status](https://img.shields.io/badge/status-active%20prototype-purple)
+
 MosaicVRAM is a C++20/CUDA runtime for switching local AI backends in and out
 of GPU residency without discarding resumable session state.
 
