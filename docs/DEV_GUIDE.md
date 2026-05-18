@@ -3,6 +3,21 @@
 This guide covers the build, architecture, and validation workflow for changing
 MosaicVRAM.
 
+## Table of Contents
+
+- [Build](#build)
+- [Architecture](#architecture)
+- [Llama Adapter](#llama-adapter)
+- [ONNX LLM Adapter](#onnx-llm-adapter)
+- [State Boundary](#state-boundary)
+- [Tokenizer And Chat Templates](#tokenizer-and-chat-templates)
+- [Deterministic Resume](#deterministic-resume)
+- [residency-run](#residency-run)
+- [GPU Smoke Tests](#gpu-smoke-tests)
+- [ONNX Tensor Backend](#onnx-tensor-backend)
+- [Formatting](#formatting)
+- [Acknowledgements](#acknowledgements)
+
 ## Build
 
 Run builds from a Visual Studio x64 developer shell.
@@ -84,18 +99,36 @@ RestoreState()
 ResumeCheck()
 ```
 
-State is copied to pinned host memory while GPU residency is evicted:
+`ResidencyController` owns the lifecycle order and residency transitions.
+`BackendStateAdapter` is the backend contract it uses to stay independent of
+each model runtime's native state format. Concrete adapters translate that
+contract into backend-specific operations.
 
-- llama.cpp: full or sequence state through llama.cpp state APIs.
-- ONNX LLM: KV cache tensors copied between CUDA memory and pinned host memory.
-- ONNX tensor backend: lifecycle and boundary tensor ownership only, not a full
-  language-model state adapter.
+The main adapter roles are:
+
+- `LlamaResidencyAdapter`: llama.cpp implementation of the residency contract.
+- `OnnxLlmResidencyAdapter`: ONNX Runtime LLM implementation of the residency
+  contract.
+- ONNX tensor backend: lower-level tensor residency and boundary ownership, not
+  a full chat adapter.
+
+## Llama Adapter
+
+`LlamaResidencyAdapter` owns llama.cpp model/context residency for GGUF models.
+It uses llama.cpp state APIs to save and restore full or sequence state, so the
+controller can evict GPU residency and later resume from the saved llama.cpp
+state without understanding llama.cpp's internal state layout.
+
+This adapter is the non-ONNX validation path for the shared lifecycle. It uses
+the same `BackendStateAdapter` contract as ONNX, but its model/context state is
+native llama.cpp state rather than ONNX tensors.
 
 ## ONNX LLM Adapter
 
-The ONNX LLM adapter uses lower-level ONNX Runtime `Ort::Session` and
-`IoBinding`, not the high-level generator API. That keeps the KV-cache tensors
-visible so MosaicVRAM can save and restore them directly.
+`OnnxLlmResidencyAdapter` owns ONNX Runtime LLM residency. It uses lower-level
+ONNX Runtime `Ort::Session` and `IoBinding`, not the high-level generator API.
+That keeps the KV-cache tensors visible so MosaicVRAM can save and restore them
+directly.
 
 Supported decoder surfaces include:
 
@@ -120,6 +153,19 @@ that converts token IDs into embeddings and runs that model before the decoder.
 The adapter intentionally fails closed when required graph inputs, dtypes, or
 provider-specific operators are unsupported. That is safer than pretending a
 stateful restore is valid.
+
+## State Boundary
+
+State is staged outside GPU residency while a model is evicted:
+
+- llama.cpp: full or sequence state through llama.cpp state APIs.
+- ONNX LLM: KV cache tensors copied between CUDA memory and pinned host memory.
+- ONNX tensor backend: lifecycle and boundary tensor ownership only, not a full
+  language-model state adapter.
+
+The controller coordinates this boundary but does not inspect backend-specific
+state contents. Each adapter owns its native state format and reports whether
+restore/resume succeeded through the shared lifecycle results.
 
 ## Tokenizer And Chat Templates
 
@@ -304,3 +350,16 @@ All C++ files should pass `clang-format`:
 ```
 
 Code style follows the Google C++ Style Guide naming conventions.
+
+## Acknowledgements
+
+MosaicVRAM builds on these external projects and tools:
+
+- llama.cpp: GGUF model loading, CUDA execution, and llama.cpp state APIs.
+- ONNX Runtime: ONNX model execution, CUDA provider support, and `IoBinding`.
+- tokenizers-cpp: Hugging Face `tokenizer.json` loading for ONNX chat.
+- CUDA: GPU residency, device memory, and pinned host memory workflows.
+- cuDNN: required by ONNX Runtime GPU builds when using CUDA provider DLLs.
+- CMake and Ninja: project configuration and builds.
+- clang-format: C++ formatting validation.
+- Draw.io: Used for architecture and validation diagrams.
